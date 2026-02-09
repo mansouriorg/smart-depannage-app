@@ -6,51 +6,52 @@ import { MOCK_MISSIONS } from '../../services/mockData';
 
 export default function MissionDetailScreen() {
   const router = useRouter();
-  
-  // 1. Get the ID from the URL (e.g., mission/1)
   const { id } = useLocalSearchParams();
 
-  // 2. Find the mission in our fake DB
   const initialMission = MOCK_MISSIONS.find((m) => m.id === id);
 
-  // If mission not found (error handling)
   if (!initialMission) {
     return (
       <View style={styles.centerContainer}>
-        <Text>Mission not found!</Text>
+        <Text>Mission introuvable !</Text>
         <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.linkText}>Go Back</Text>
+          <Text style={styles.linkText}>Retour</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // 3. Local state to simulate status updates
   const [status, setStatus] = useState(initialMission.status);
 
-  // --- ACTIONS ---
+  const getStatusLabel = (s: string) => {
+    switch(s) {
+      case 'pending': return 'EN ATTENTE';
+      case 'in_progress': return 'EN COURS';
+      case 'done': return 'TERMINÉ';
+      default: return s.toUpperCase();
+    }
+  };
+
   const handleStartMission = () => {
-    Alert.alert("Start Mission", "Are you at the location and ready to start?", [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert("Commencer la mission", "Êtes-vous sur place et prêt à commencer ?", [
+      { text: "Annuler", style: "cancel" },
       { 
-        text: "Yes, Start", 
+        text: "Oui, Commencer", 
         onPress: () => {
           setStatus('in_progress');
-          // TODO: API.updateMissionStatus(id, 'in_progress')
         } 
       }
     ]);
   };
 
   const handleFinishMission = () => {
-    Alert.alert("Complete Mission", "Have you finished all the work?", [
-      { text: "No", style: "cancel" },
+    Alert.alert("Terminer la mission", "Avez-vous terminé tout le travail ?", [
+      { text: "Non", style: "cancel" },
       { 
-        text: "Yes, Complete", 
+        text: "Oui, Terminer", 
         onPress: () => {
           setStatus('done');
-          // TODO: API.updateMissionStatus(id, 'done')
-          router.back(); // Go back to list after finishing
+          router.back();
         } 
       }
     ]);
@@ -58,25 +59,22 @@ export default function MissionDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* CUSTOM HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="black" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Mission Details</Text>
-        <View style={{ width: 24 }} /> {/* Spacer for alignment */}
+        <Text style={styles.headerTitle}>Détails de la Mission</Text>
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         
-        {/* STATUS BANNER */}
         <View style={[styles.statusBanner, { backgroundColor: status === 'done' ? '#34C759' : '#007AFF' }]}>
-          <Text style={styles.statusBannerText}>Current Status: {status.toUpperCase().replace('_', ' ')}</Text>
+          <Text style={styles.statusBannerText}>Statut : {getStatusLabel(status)}</Text>
         </View>
 
-        {/* INFO CARDS */}
         <View style={styles.card}>
-          <Text style={styles.label}>TASK</Text>
+          <Text style={styles.label}>TÂCHE</Text>
           <Text style={styles.title}>{initialMission.title}</Text>
           
           <View style={styles.divider} />
@@ -86,36 +84,34 @@ export default function MissionDetailScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>LOCATION</Text>
+          <Text style={styles.label}>ADRESSE</Text>
           <View style={styles.row}>
             <Ionicons name="location" size={20} color="#007AFF" />
             <Text style={styles.address}>{initialMission.address}</Text>
           </View>
           
-          {/* Map Placeholder Button */}
-          <TouchableOpacity style={styles.mapButton} onPress={() => Alert.alert("Map", "Open Google Maps/Waze here")}>
-            <Text style={styles.mapButtonText}>Open in Maps</Text>
+          <TouchableOpacity style={styles.mapButton} onPress={() => Alert.alert("Carte", "Ouverture de Google Maps/Waze...")}>
+            <Text style={styles.mapButtonText}>Ouvrir la carte</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ACTION BUTTONS */}
         <View style={styles.actionContainer}>
           {status === 'pending' && (
             <TouchableOpacity style={styles.primaryButton} onPress={handleStartMission}>
-              <Text style={styles.primaryButtonText}>Start Mission</Text>
+              <Text style={styles.primaryButtonText}>Démarrer la mission</Text>
             </TouchableOpacity>
           )}
 
           {status === 'in_progress' && (
             <TouchableOpacity style={styles.successButton} onPress={handleFinishMission}>
-              <Text style={styles.primaryButtonText}>Mark as Completed</Text>
+              <Text style={styles.primaryButtonText}>Marquer comme terminé</Text>
             </TouchableOpacity>
           )}
 
           {status === 'done' && (
             <View style={styles.completedBox}>
               <Ionicons name="checkmark-circle" size={48} color="#34C759" />
-              <Text style={styles.completedText}>Mission Completed</Text>
+              <Text style={styles.completedText}>Mission Terminée</Text>
             </View>
           )}
         </View>
@@ -139,7 +135,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60, // Safe area
+    paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 20,
     backgroundColor: 'white',

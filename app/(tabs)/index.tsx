@@ -5,7 +5,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 // ----------------------------------------------------------------------
-// 1. MOCK DATA (Ideally this comes from services/mockData.ts later)
+// 1. DONNÉES FACTICES (À remplacer par services/mockData.ts plus tard)
 // ----------------------------------------------------------------------
 const WORKER_PROFILE = {
   name: "Mahmoud",
@@ -13,10 +13,10 @@ const WORKER_PROFILE = {
   avatarInitials: "MM",
 };
 
-const PENDING_MISSIONS = 2; // Example count
+const PENDING_MISSIONS = 2; // Exemple de nombre
 
 // ----------------------------------------------------------------------
-// 2. MAIN COMPONENT
+// 2. COMPOSANT PRINCIPAL
 // ----------------------------------------------------------------------
 export default function WorkerDashboard() {
   const router = useRouter();
@@ -25,25 +25,25 @@ export default function WorkerDashboard() {
   const [status, setStatus] = useState<'online' | 'offline'>('offline');
   const [address, setAddress] = useState<string | null>(null);
 
-  // --- FUNCTION: Get GPS Location ---
+  // --- FONCTION : Obtenir la position GPS ---
   const handleUpdatePosition = async () => {
     setLoading(true);
     
-    // 1. Request Permission
+    // 1. Demander la permission
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission denied', 'We need your location to assign missions.');
+      Alert.alert('Permission refusée', 'Nous avons besoin de votre position pour vous attribuer des missions.');
       setLoading(false);
       return;
     }
 
-    // 2. Get Coordinates
+    // 2. Obtenir les coordonnées
     try {
       let currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation);
       setStatus('online');
 
-      // (Optional) Reverse Geocode to get street name
+      // (Optionnel) Géocodage inverse pour obtenir le nom de la rue
       let addressResponse = await Location.reverseGeocodeAsync({
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude
@@ -54,11 +54,11 @@ export default function WorkerDashboard() {
         setAddress(`${addr.street}, ${addr.city}`);
       }
 
-      // TODO: Here you would call API.updateLocation(lat, long)
-      Alert.alert("Success", "Position updated! You are now visible to supervisors.");
+      // TODO: Appeler l'API ici API.updateLocation(lat, long)
+      Alert.alert("Succès", "Position mise à jour ! Vous êtes maintenant visible par les superviseurs.");
       
     } catch (error) {
-      Alert.alert("Error", "Could not fetch location.");
+      Alert.alert("Erreur", "Impossible de récupérer la localisation.");
     } finally {
       setLoading(false);
     }
@@ -67,25 +67,25 @@ export default function WorkerDashboard() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       
-      {/* HEADER SECTION */}
+      {/* SECTION EN-TÊTE */}
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{WORKER_PROFILE.avatarInitials}</Text>
         </View>
         <View>
-          <Text style={styles.greeting}>Hello, {WORKER_PROFILE.name}</Text>
+          <Text style={styles.greeting}>Bonjour, {WORKER_PROFILE.name}</Text>
           <Text style={styles.roleBadge}>{WORKER_PROFILE.role}</Text>
         </View>
         <View style={[styles.statusDot, { backgroundColor: status === 'online' ? '#4CAF50' : '#ccc' }]} />
       </View>
 
-      {/* ACTION CARD: UPDATE POSITION */}
+      {/* CARTE D'ACTION : METTRE À JOUR LA POSITION */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>📍 My Status</Text>
+        <Text style={styles.cardTitle}>📍 Mon Statut</Text>
         <Text style={styles.cardSubtitle}>
           {status === 'online' 
-            ? "You are ONLINE and visible." 
-            : "You are OFFLINE. Update position to start."}
+            ? "Vous êtes EN LIGNE et visible." 
+            : "Vous êtes HORS LIGNE. Mettez à jour votre position pour commencer."}
         </Text>
 
         {location && (
@@ -108,29 +108,29 @@ export default function WorkerDashboard() {
             <>
               <Ionicons name="location-outline" size={24} color="white" style={{ marginRight: 8 }} />
               <Text style={styles.buttonText}>
-                {location ? "Update My Position" : "Check In Now"}
+                {location ? "Mettre à jour ma position" : "Signaler ma présence"}
               </Text>
             </>
           )}
         </TouchableOpacity>
       </View>
 
-      {/* SUMMARY CARD: MISSIONS */}
+      {/* CARTE RÉSUMÉ : MISSIONS */}
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>📋 Active Missions</Text>
+          <Text style={styles.cardTitle}>📋 Missions Actives</Text>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>{PENDING_MISSIONS} New</Text>
+            <Text style={styles.badgeText}>{PENDING_MISSIONS} Nouvelles</Text>
           </View>
         </View>
         
-        <Text style={styles.cardSubtitle}>You have {PENDING_MISSIONS} pending jobs nearby.</Text>
+        <Text style={styles.cardSubtitle}>Vous avez {PENDING_MISSIONS} missions en attente à proximité.</Text>
         
         <TouchableOpacity 
           style={styles.outlineButton}
           onPress={() => router.push('/(tabs)/missions')}
         >
-          <Text style={styles.outlineButtonText}>View All Missions</Text>
+          <Text style={styles.outlineButtonText}>Voir toutes les missions</Text>
         </TouchableOpacity>
       </View>
 
@@ -144,11 +144,11 @@ export default function WorkerDashboard() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7', // iOS Light Gray
+    backgroundColor: '#F2F2F7', // Gris clair iOS
   },
   contentContainer: {
     padding: 20,
-    paddingTop: 60, // Safe area top
+    paddingTop: 60, // Zone sûre en haut
   },
   header: {
     flexDirection: 'row',
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    marginLeft: 'auto', // Pushes it to the right
+    marginLeft: 'auto', // Pousse vers la droite
   },
   card: {
     backgroundColor: 'white',

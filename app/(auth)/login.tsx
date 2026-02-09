@@ -11,7 +11,7 @@ export default function LoginScreen() {
 
   const handleLogin = () => {
     if (!username || !selectedRole) {
-      Alert.alert('Missing Info', 'Please enter your name and select your role.');
+      Alert.alert('Information manquante', 'Veuillez entrer votre nom et sélectionner votre métier.');
       return;
     }
 
@@ -34,22 +34,22 @@ export default function LoginScreen() {
         
         {/* LOGO AREA */}
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>🛠️ Smart Depannage</Text>
-          <Text style={styles.subtitle}>Worker App Portal</Text>
+          <Text style={styles.logoText}>🛠️ Smart Dépannage</Text>
+          <Text style={styles.subtitle}>Portail Artisan</Text>
         </View>
 
         {/* INPUTS */}
         <View style={styles.form}>
-          <Text style={styles.label}>Worker Name</Text>
+          <Text style={styles.label}>Nom de l'artisan</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="e.g. Mahmoud" 
+            placeholder="Ex: Mahmoud" 
             placeholderTextColor="#999"
             value={username}
             onChangeText={setUsername}
           />
 
-          <Text style={styles.label}>Select Your Profession</Text>
+          <Text style={styles.label}>Sélectionnez votre métier</Text>
           <View style={styles.roleContainer}>
             {Object.values(ROLES).map((role) => (
               <TouchableOpacity
@@ -77,7 +77,7 @@ export default function LoginScreen() {
             disabled={loading}
           >
             <Text style={styles.loginButtonText}>
-              {loading ? "Signing in..." : "Start Work Day"}
+              {loading ? "Connexion..." : "Commencer la journée"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -147,6 +147,7 @@ const styles = StyleSheet.create({
   roleButtonActive: {
     backgroundColor: '#E5F1FF',
     borderColor: '#007AFF',
+    borderWidth: 1,
   },
   roleText: {
     color: '#666',
