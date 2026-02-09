@@ -3,9 +3,8 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
-// Make sure this path matches your actual file. 
-// If your file is named 'useColorScheme.ts', remove the dashes.
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
 export const unstable_settings = {
   // Ensure any deep link or reload starts at the auth flow first
   initialRouteName: '(auth)',
@@ -25,11 +24,11 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
         {/* 3. The Mission Details Page */}
+        {/* UPDATED: headerShown: false to remove the double header */}
         <Stack.Screen 
           name="mission/[id]" 
           options={{ 
-            title: 'Mission Details',
-            headerBackTitle: 'Back' 
+            headerShown: false 
           }} 
         />
 
