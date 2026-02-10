@@ -1,28 +1,73 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { ROLES } from '../../constants/Roles';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+
+// ✅ IMPORT API SERVICE
+// Assuming your 'services' folder is at the project root
+import api, { saveToken } from '../../services/api';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [username, setUsername] = useState('');
-  const [selectedRole, setSelectedRole] = useState<string | null>(null);
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    if (!username || !selectedRole) {
-      Alert.alert('Information manquante', 'Veuillez entrer votre nom et sélectionner votre métier.');
+  const handleLogin = async () => {
+    // 1. Basic Validation
+    if (!email || !password) {
+      Alert.alert('Erreur', 'Veuillez entrer votre email et votre mot de passe.');
       return;
     }
 
     setLoading(true);
 
-    // SIMULATE API CALL
-    setTimeout(() => {
-      setLoading(false);
-      // Navigate to the main app and replace the history so they can't go "back" to login
+    try {
+      // 🚀 2. REAL API CALL TO BACKEND
+      // We send the email and password to the NestJS /auth/login endpoint
+      const response = await api.post('/auth/login', { 
+        email: email.toLowerCase().trim(), 
+        password: password 
+      });
+
+      console.log("Login Success:", response.data);
+
+      // 3. Get Token from response
+      // (NestJS usually returns { access_token: "..." })
+      const { access_token } = response.data;
+
+      if (!access_token) {
+        throw new Error("Token manquant dans la réponse du serveur.");
+      }
+
+      // 4. Save Token securely on the device
+      await saveToken(access_token);
+      
+      // 5. Navigate to the Main App (Tabs)
       router.replace('/(tabs)'); 
-    }, 1000);
+
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      
+      // Display a friendly error message
+      const message = error.response?.data?.message || "Échec de la connexion. Vérifiez vos identifiants ou votre réseau.";
+      // NestJS often returns messages as arrays (e.g. class-validator errors)
+      const displayMessage = Array.isArray(message) ? message[0] : message;
+      
+      Alert.alert("Erreur de connexion", displayMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -34,41 +79,36 @@ export default function LoginScreen() {
         
         {/* LOGO AREA */}
         <View style={styles.logoContainer}>
-          <Text style={styles.logoText}>🛠️ Smart Dépannage</Text>
-          <Text style={styles.subtitle}>Portail Artisan</Text>
+          <Text style={styles.logoIcon}>🛠️</Text>
+          <Text style={styles.logoText}>Smart Dépannage</Text>
+          <Text style={styles.subtitle}>Espace Artisan</Text>
         </View>
 
-        {/* INPUTS */}
+        {/* FORM INPUTS */}
         <View style={styles.form}>
-          <Text style={styles.label}>Nom de l'artisan</Text>
+          
+          {/* EMAIL INPUT */}
+          <Text style={styles.label}>Adresse Email</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Ex: Mahmoud" 
+            placeholder="technicien@smart-depannage.com" 
             placeholderTextColor="#999"
-            value={username}
-            onChangeText={setUsername}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
           />
 
-          <Text style={styles.label}>Sélectionnez votre métier</Text>
-          <View style={styles.roleContainer}>
-            {Object.values(ROLES).map((role) => (
-              <TouchableOpacity
-                key={role}
-                style={[
-                  styles.roleButton, 
-                  selectedRole === role && styles.roleButtonActive
-                ]}
-                onPress={() => setSelectedRole(role)}
-              >
-                <Text style={[
-                  styles.roleText, 
-                  selectedRole === role && styles.roleTextActive
-                ]}>
-                  {role}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* PASSWORD INPUT */}
+          <Text style={styles.label}>Mot de passe</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="Votre mot de passe secret" 
+            placeholderTextColor="#999"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry // 🔒 Hides the password
+          />
 
           {/* LOGIN BUTTON */}
           <TouchableOpacity 
@@ -76,9 +116,11 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
           >
-            <Text style={styles.loginButtonText}>
-              {loading ? "Connexion..." : "Commencer la journée"}
-            </Text>
+            {loading ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text style={styles.loginButtonText}>Se connecter</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -99,82 +141,60 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 48,
+    marginBottom: 40,
+  },
+  logoIcon: {
+    fontSize: 48,
+    marginBottom: 10,
   },
   logoText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#007AFF',
-    marginBottom: 8,
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#0f172a', // Dark Blue
+    marginBottom: 5,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    color: '#64748b', // Slate Gray
+    fontWeight: '500',
   },
   form: {
     width: '100%',
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '700',
+    color: '#334155',
     marginBottom: 8,
     marginTop: 16,
   },
   input: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#F8FAFC', // Very light gray
     padding: 16,
     borderRadius: 12,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  roleContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  roleButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: '#F2F2F7',
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  roleButtonActive: {
-    backgroundColor: '#E5F1FF',
-    borderColor: '#007AFF',
-    borderWidth: 1,
-  },
-  roleText: {
-    color: '#666',
-    fontWeight: '500',
-  },
-  roleTextActive: {
-    color: '#007AFF',
-    fontWeight: 'bold',
+    borderColor: '#E2E8F0',
+    color: '#0f172a',
   },
   loginButton: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 18,
-    borderRadius: 14,
+    backgroundColor: '#007AFF', // iOS Blue
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 32,
     shadowColor: '#007AFF',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
   },
   loginButtonDisabled: {
-    backgroundColor: '#A0CFFF',
+    backgroundColor: '#93C5FD', // Light blue when disabled
   },
   loginButtonText: {
     color: 'white',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
   },
 });
