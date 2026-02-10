@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,49 +13,51 @@ import {
   View
 } from 'react-native';
 
-// ✅ IMPORT DE L'API
+// ✅ IMPORT API
 import api from '../../services/api';
 
 // ----------------------------------------------------------------------
-// 1. COMPOSANT PRINCIPAL
+// 1. MAIN COMPONENT
 // ----------------------------------------------------------------------
 export default function WorkerDashboard() {
   const router = useRouter();
   
-  // États pour la Localisation
+  // Location States
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [locationLoading, setLocationLoading] = useState(false);
   const [status, setStatus] = useState<'online' | 'offline'>('offline');
 
-  // États pour les Missions (Données Réelles)
+  // Mission States
   const [missions, setMissions] = useState<any[]>([]);
   const [missionsLoading, setMissionsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- 1. FONCTION : Récupérer les Missions ---
+  // --- 1. FUNCTION: Fetch Missions ---
   const fetchMissions = async () => {
     try {
       const response = await api.get('/interventions/assigned');
       setMissions(response.data);
     } catch (error) {
-      console.error("Erreur missions:", error);
-      // On ne met pas d'Alert ici pour ne pas spammer au démarrage
+      console.error("Error fetching missions:", error);
     } finally {
       setMissionsLoading(false);
       setRefreshing(false);
     }
   };
 
-  // Charger les missions au démarrage
-  useEffect(() => {
-    fetchMissions();
-  }, []);
+  // ✅ AUTO-REFRESH: Runs every time the screen becomes visible (focused)
+  useFocusEffect(
+    useCallback(() => {
+      fetchMissions();
+    }, [])
+  );
 
-  // --- 2. FONCTION : Obtenir la position GPS ---
+  // --- 2. FUNCTION: Get GPS Position & Send to Backend ---
   const handleUpdatePosition = async () => {
     setLocationLoading(true);
     
+    // 1. Ask Permission
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission refusée', 'Nous avons besoin de votre position.');
@@ -64,11 +66,12 @@ export default function WorkerDashboard() {
     }
 
     try {
+      // 2. Get Coordinates
       let currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation);
       setStatus('online');
 
-      // Géocodage inverse (Lat/Long -> Adresse)
+      // 3. Reverse Geocoding (Optional, for display)
       let addressResponse = await Location.reverseGeocodeAsync({
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude
@@ -76,27 +79,33 @@ export default function WorkerDashboard() {
 
       if (addressResponse.length > 0) {
         const addr = addressResponse[0];
-        // Création d'une chaîne d'adresse lisible
         const street = addr.street || addr.name || '';
         const city = addr.city || addr.subregion || '';
         setAddress(`${street}, ${city}`);
       }
 
-      Alert.alert("Succès", "Position mise à jour ! Vous êtes visible.");
+      // 🚀 4. SEND TO BACKEND (This is the new part!)
+      console.log("Sending location to backend...");
+      await api.patch('/users/location', {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude
+      });
+
+      Alert.alert("Succès", "Position mise à jour et envoyée au serveur !");
       
     } catch (error) {
-      Alert.alert("Erreur", "Impossible de récupérer la localisation.");
+      console.error("Location Error:", error);
+      Alert.alert("Erreur", "Impossible de mettre à jour la localisation sur le serveur.");
     } finally {
       setLocationLoading(false);
     }
   };
 
-  // --- 3. RENDU D'UNE CARTE MISSION ---
+  // --- 3. RENDER MISSION CARD ---
   const renderMissionCard = (mission: any) => (
     <TouchableOpacity 
       key={mission.id}
       style={styles.missionItem}
-      // ✅ CORRECTION ICI : Enlever les parenthèses autour de "mission"
       onPress={() => router.push(`/mission/${mission.id}`)} 
     >
       <View style={styles.missionHeader}>
@@ -122,7 +131,7 @@ export default function WorkerDashboard() {
       }
     >
       
-      {/* SECTION EN-TÊTE */}
+      {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>Tech</Text>
@@ -134,7 +143,7 @@ export default function WorkerDashboard() {
         <View style={[styles.statusDot, { backgroundColor: status === 'online' ? '#4CAF50' : '#ccc' }]} />
       </View>
 
-      {/* CARTE 1 : POSITION (GPS) */}
+      {/* CARD 1: GPS STATUS */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>📍 Mon Statut</Text>
         <Text style={styles.cardSubtitle}>
@@ -173,7 +182,7 @@ export default function WorkerDashboard() {
         </TouchableOpacity>
       </View>
 
-      {/* CARTE 2 : LISTE DES MISSIONS (Données Réelles) */}
+      {/* CARD 2: MISSION LIST */}
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
           <Text style={styles.cardTitle}>📋 Mes Missions</Text>
@@ -190,7 +199,6 @@ export default function WorkerDashboard() {
           <Text style={styles.emptyText}>Aucune mission assignée pour le moment.</Text>
         ) : (
           <View>
-             {/* Affiche les missions ici */}
              {missions.map(renderMissionCard)}
           </View>
         )}
@@ -201,16 +209,16 @@ export default function WorkerDashboard() {
 }
 
 // ----------------------------------------------------------------------
-// 4. PETIT COMPOSANT POUR LES BADGES DE STATUT
+// 4. STATUS BADGE COMPONENT
 // ----------------------------------------------------------------------
 const StatusBadge = ({ status }: { status: string }) => {
-  let color = '#64748b'; // Gris
+  let color = '#64748b'; // Grey
   let text = status;
 
   if (status === 'PENDING') { color = '#f59e0b'; text = 'En Attente'; } // Orange
-  if (status === 'ACCEPTED') { color = '#3b82f6'; text = 'Accepté'; } // Bleu
+  if (status === 'ACCEPTED') { color = '#3b82f6'; text = 'Accepté'; } // Blue
   if (status === 'IN_PROGRESS') { color = '#8b5cf6'; text = 'En Cours'; } // Violet
-  if (status === 'COMPLETED') { color = '#10b981'; text = 'Terminé'; } // Vert
+  if (status === 'COMPLETED') { color = '#10b981'; text = 'Terminé'; } // Green
 
   return (
     <View style={[styles.statusBadge, { backgroundColor: color }]}>
@@ -341,7 +349,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
   },
-  // Styles pour les items de mission
   missionItem: {
     backgroundColor: '#F8FAFC',
     padding: 12,
