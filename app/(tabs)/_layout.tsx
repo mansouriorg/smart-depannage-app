@@ -1,52 +1,39 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
 
-// 1. Corrected Import Paths (PascalCase to match your filenames)
-import { HapticTab } from '@/components/haptic-tab';
+// ✅ On garde uniquement les icônes et les couleurs
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+
 export default function TabLayout() {
   const colorScheme = useColorScheme();
 
   return (
     <Tabs
       screenOptions={{
-        // Uses your theme colors for the active tab (Blue/White)
+        // Couleur de l'onglet actif (Bleu par défaut)
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
-        
-        // Uses the custom button component you created for haptic feedback
-        tabBarButton: HapticTab,
-        
-        // Removes the default background to allow blur effects on iOS
-        tabBarBackground: undefined,
-        
-        tabBarStyle: Platform.select({
-          ios: {
-            // Absolute position makes the tab bar float over content on iOS
-            position: 'absolute',
-          },
-          default: {},
-        }),
+        // 🗑️ SUPPRIMÉ : HapticTab (le bouton personnalisé)
+        // 🗑️ SUPPRIMÉ : tabBarBackground (le fond transparent/flou)
+        // 🗑️ SUPPRIMÉ : tabBarStyle (le style flottant sur iOS)
       }}>
       
-      {/* 1. DASHBOARD TAB */}
+      {/* 1. DASHBOARD TAB (Accueil) */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Dashboard',
+          title: 'Accueil',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
         }}
       />
 
-      {/* 2. MISSIONS TAB */}
+      {/* 2. MISSIONS TAB (Liste des missions) */}
       <Tabs.Screen
         name="missions" 
         options={{
           title: 'Missions',
-          // 'list.bullet.clipboard.fill' maps to the clipboard icon in your IconSymbol file
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet.clipboard.fill" color={color} />,
         }}
       />

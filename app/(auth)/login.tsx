@@ -13,14 +13,14 @@ import {
 } from 'react-native';
 
 // ✅ IMPORT API SERVICE
-// Assuming your 'services' folder is at the project root
 import api, { saveToken } from '../../services/api';
 
 export default function LoginScreen() {
   const router = useRouter();
   
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  // ⚡️ CREDENTIALS PRÉ-REMPLIS POUR LE TEST
+  const [email, setEmail] = useState('plombier@gmail.com');
+  const [password, setPassword] = useState('password123');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -34,7 +34,6 @@ export default function LoginScreen() {
 
     try {
       // 🚀 2. REAL API CALL TO BACKEND
-      // We send the email and password to the NestJS /auth/login endpoint
       const response = await api.post('/auth/login', { 
         email: email.toLowerCase().trim(), 
         password: password 
@@ -42,16 +41,16 @@ export default function LoginScreen() {
 
       console.log("Login Success:", response.data);
 
-      // 3. Get Token from response
-      // (NestJS usually returns { access_token: "..." })
-      const { access_token } = response.data;
+      // ⚠️ 3. FIX: Get Token using the correct name from your backend log
+      // Your backend returns: { accessToken: "...", user: {...} }
+      const { accessToken } = response.data;
 
-      if (!access_token) {
+      if (!accessToken) {
         throw new Error("Token manquant dans la réponse du serveur.");
       }
 
       // 4. Save Token securely on the device
-      await saveToken(access_token);
+      await saveToken(accessToken);
       
       // 5. Navigate to the Main App (Tabs)
       router.replace('/(tabs)'); 
@@ -61,7 +60,6 @@ export default function LoginScreen() {
       
       // Display a friendly error message
       const message = error.response?.data?.message || "Échec de la connexion. Vérifiez vos identifiants ou votre réseau.";
-      // NestJS often returns messages as arrays (e.g. class-validator errors)
       const displayMessage = Array.isArray(message) ? message[0] : message;
       
       Alert.alert("Erreur de connexion", displayMessage);
