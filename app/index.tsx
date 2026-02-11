@@ -2,7 +2,10 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 
-// ✅ C'est cette ligne qui manquait ou était incorrecte
+// ✅ IMPORT POUR VÉRIFIER LE TOKEN
+// Assurez-vous que getToken est bien exporté dans votre services/api.ts
+import { getToken } from '../services/api';
+
 export default function Index() {
   const router = useRouter();
   
@@ -11,7 +14,7 @@ export default function Index() {
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    // 1. Démarrer l'animation
+    // 1. Démarrer l'animation (Logo qui apparaît et grandit)
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -26,12 +29,33 @@ export default function Index() {
       }),
     ]).start();
 
-    // 2. Redirection automatique vers Login après 2.5 secondes
-    const timer = setTimeout(() => {
-      router.replace('/(auth)/login');
-    }, 2500);
+    // 2. Vérification de la connexion (Logique intelligente)
+    const checkAuthAndRedirect = async () => {
+      try {
+        // A. On attend 2.5 secondes pour laisser l'animation se jouer (Branding)
+        await new Promise(resolve => setTimeout(resolve, 2500));
 
-    return () => clearTimeout(timer);
+        // B. On vérifie si un token existe
+        const token = await getToken();
+
+        if (token) {
+          // 🟢 Token trouvé -> On va direct au Dashboard
+          console.log("Token trouvé, redirection vers Dashboard...");
+          router.replace('/(tabs)');
+        } else {
+          // 🔴 Pas de token -> On va au Login
+          console.log("Pas de token, redirection vers Login...");
+          router.replace('/(auth)/login');
+        }
+      } catch (error) {
+        console.error("Erreur splash screen:", error);
+        // En cas de doute, on renvoie vers le login
+        router.replace('/(auth)/login');
+      }
+    };
+
+    checkAuthAndRedirect();
+
   }, []);
 
   return (
@@ -63,7 +87,7 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0f172a', // Bleu nuit profond
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -73,7 +97,7 @@ const styles = StyleSheet.create({
   logoContainer: {
     width: 100,
     height: 100,
-    backgroundColor: '#D4AF37',
+    backgroundColor: '#D4AF37', // Or
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
@@ -97,7 +121,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 16,
-    color: '#94a3b8',
+    color: '#94a3b8', // Gris clair
     textAlign: 'center',
     marginTop: 8,
   },

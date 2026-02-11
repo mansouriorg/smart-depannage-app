@@ -1,49 +1,111 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
-import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { MOCK_MISSIONS, Mission } from '../../services/mockData';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+
+// ✅ IMPORT REAL API
+import api from '../../services/api';
+
+// 🏷️ FILTER OPTIONS
+const FILTERS = [
+  { id: 'ALL', label: 'Tout' },
+  { id: 'PENDING', label: 'En attente' },
+  { id: 'ACCEPTED', label: 'Accepté' },
+  { id: 'IN_PROGRESS', label: 'En cours' },
+  { id: 'COMPLETED', label: 'Terminé' },
+];
 
 export default function MissionsScreen() {
   const router = useRouter();
+  
+  // States
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('ALL'); // 🆕 Filter State
+  const [missions, setMissions] = useState<any[]>([]); 
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Filter missions based on search text
-  const filteredMissions = MOCK_MISSIONS.filter(mission => 
-    mission.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    mission.address.toLowerCase().includes(searchQuery.toLowerCase())
+  // --- 1. Fetch Real Missions ---
+  const fetchMissions = async () => {
+    try {
+      const response = await api.get('/interventions/assigned');
+      setMissions(response.data);
+    } catch (error) {
+      console.error("Error fetching missions:", error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchMissions();
+    }, [])
   );
 
+  // --- 2. Filter Logic (Search + Status) ---
+  const filteredMissions = missions.filter(mission => {
+    // A. Text Search
+    const query = searchQuery.toLowerCase();
+    const title = (mission.serviceType || '').toLowerCase();
+    const address = (mission.address || '').toLowerCase();
+    const matchesSearch = title.includes(query) || address.includes(query);
+
+    // B. Status Filter
+    const matchesStatus = filterStatus === 'ALL' || mission.status === filterStatus;
+
+    return matchesSearch && matchesStatus;
+  });
+
+  // --- 3. Helper: Status Colors ---
   const getStatusColor = (status: string) => {
     switch(status) {
-      case 'pending': return '#FF9500'; // Orange
-      case 'in_progress': return '#007AFF'; // Blue
-      case 'done': return '#34C759'; // Green
+      case 'PENDING': return '#FF9500'; 
+      case 'ACCEPTED': return '#007AFF'; 
+      case 'IN_PROGRESS': return '#8b5cf6'; 
+      case 'COMPLETED': return '#34C759'; 
+      case 'CANCELED': return '#FF3B30'; 
       default: return '#8E8E93';
     }
   };
 
-  const renderMissionItem = ({ item }: { item: Mission }) => (
+  // --- 4. Render Item ---
+  const renderMissionItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={styles.card} 
       onPress={() => router.push(`/mission/${item.id}`)}
     >
       <View style={styles.cardHeader}>
-        <Text style={styles.date}>{item.date}</Text>
+        <Text style={styles.date}>
+          {new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+        </Text>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{item.status.toUpperCase().replace('_', ' ')}</Text>
+          <Text style={styles.statusText}>{item.status}</Text>
         </View>
       </View>
 
-      <Text style={styles.title}>{item.title}</Text>
+      <Text style={styles.title}>{item.serviceType}</Text>
       
       <View style={styles.locationRow}>
         <Ionicons name="location-sharp" size={16} color="#666" />
-        <Text style={styles.address}>{item.address}</Text>
+        <Text style={styles.address} numberOfLines={1}>{item.address}</Text>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.tapText}>Tap to view details</Text>
+        <Text style={styles.tapText}>
+           {item.client?.name ? `Client: ${item.client.name}` : 'Voir les détails'}
+        </Text>
         <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
       </View>
     </TouchableOpacity>
@@ -51,32 +113,72 @@ export default function MissionsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header / Search Bar */}
+      {/* Header Container */}
       <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>My Missions</Text>
+        <Text style={styles.headerTitle}>Mes Missions</Text>
+        
+        {/* Search Bar */}
         <View style={styles.searchBar}>
           <Ionicons name="search" size={20} color="#8E8E93" style={{ marginRight: 8 }} />
           <TextInput 
-            placeholder="Search address or task..." 
+            placeholder="Rechercher..." 
             value={searchQuery}
             onChangeText={setSearchQuery}
             style={styles.searchInput}
+            autoCapitalize="none"
           />
         </View>
+
+        {/* 🆕 FILTER CHIPS (Horizontal Scroll) */}
+        <View style={styles.filterContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+            {FILTERS.map((filter) => (
+              <TouchableOpacity
+                key={filter.id}
+                onPress={() => setFilterStatus(filter.id)}
+                style={[
+                  styles.filterChip,
+                  filterStatus === filter.id && styles.activeChip
+                ]}
+              >
+                <Text style={[
+                  styles.chipText,
+                  filterStatus === filter.id && styles.activeChipText
+                ]}>
+                  {filter.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
       </View>
 
       {/* List */}
-      <FlatList 
-        data={filteredMissions}
-        keyExtractor={(item) => item.id}
-        renderItem={renderMissionItem}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No missions found.</Text>
-          </View>
-        }
-      />
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      ) : (
+        <FlatList 
+          data={filteredMissions}
+          keyExtractor={(item) => item.id.toString()}
+          renderItem={renderMissionItem}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => {
+              setRefreshing(true);
+              fetchMissions();
+            }} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="clipboard-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>Aucune mission trouvée.</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
@@ -86,9 +188,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F2F7',
   },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   headerContainer: {
-    padding: 16,
     paddingTop: 60,
+    paddingBottom: 10,
     backgroundColor: 'white',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
@@ -97,6 +204,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
     marginBottom: 12,
+    paddingHorizontal: 16,
   },
   searchBar: {
     flexDirection: 'row',
@@ -104,11 +212,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#F2F2F7',
     padding: 10,
     borderRadius: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
   },
+  // 🆕 Filter Styles
+  filterContainer: {
+    paddingLeft: 16,
+    paddingBottom: 4,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#F2F2F7',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  activeChip: {
+    backgroundColor: '#007AFF', // Blue when selected
+    borderColor: '#007AFF',
+  },
+  chipText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '600',
+  },
+  activeChipText: {
+    color: 'white', // White text when selected
+  },
+  // List Styles
   listContent: {
     padding: 16,
   },
@@ -126,10 +263,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
+    alignItems: 'center',
   },
   date: {
     fontSize: 12,
     color: '#8E8E93',
+    fontWeight: '600',
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -156,6 +295,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     color: '#3A3A3C',
     fontSize: 14,
+    flex: 1,
   },
   footer: {
     borderTopWidth: 1,
@@ -168,6 +308,7 @@ const styles = StyleSheet.create({
   tapText: {
     fontSize: 12,
     color: '#007AFF',
+    fontWeight: '500',
   },
   emptyState: {
     marginTop: 50,
@@ -176,5 +317,6 @@ const styles = StyleSheet.create({
   emptyText: {
     color: '#8E8E93',
     fontSize: 16,
+    marginTop: 10,
   },
 });
