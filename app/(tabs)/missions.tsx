@@ -6,6 +6,7 @@ import {
   FlatList,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -30,7 +31,7 @@ export default function MissionsScreen() {
   
   // States
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('ALL'); // 🆕 Filter State
+  const [filterStatus, setFilterStatus] = useState('ALL'); 
   const [missions, setMissions] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -54,74 +55,80 @@ export default function MissionsScreen() {
     }, [])
   );
 
-  // --- 2. Filter Logic (Search + Status) ---
+  // --- 2. Filter Logic ---
   const filteredMissions = missions.filter(mission => {
-    // A. Text Search
     const query = searchQuery.toLowerCase();
     const title = (mission.serviceType || '').toLowerCase();
     const address = (mission.address || '').toLowerCase();
     const matchesSearch = title.includes(query) || address.includes(query);
-
-    // B. Status Filter
     const matchesStatus = filterStatus === 'ALL' || mission.status === filterStatus;
-
     return matchesSearch && matchesStatus;
   });
 
-  // --- 3. Helper: Status Colors ---
-  const getStatusColor = (status: string) => {
-    switch(status) {
-      case 'PENDING': return '#FF9500'; 
-      case 'ACCEPTED': return '#007AFF'; 
-      case 'IN_PROGRESS': return '#8b5cf6'; 
-      case 'COMPLETED': return '#34C759'; 
-      case 'CANCELED': return '#FF3B30'; 
-      default: return '#8E8E93';
-    }
-  };
-
-  // --- 4. Render Item ---
+  // --- 3. Render Item ---
   const renderMissionItem = ({ item }: { item: any }) => (
     <TouchableOpacity 
       style={styles.card} 
+      activeOpacity={0.7}
       onPress={() => router.push(`/mission/${item.id}`)}
     >
+      {/* Header: Service Type & Badge */}
       <View style={styles.cardHeader}>
-        <Text style={styles.date}>
-          {new Date(item.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-        </Text>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{item.status}</Text>
+        <Text style={styles.title}>{item.serviceType}</Text>
+        <StatusBadge status={item.status} />
+      </View>
+
+      <View style={styles.divider} />
+
+      {/* Details */}
+      <View style={styles.detailsContainer}>
+        {/* Client */}
+        <View style={styles.detailRow}>
+          <Ionicons name="person-outline" size={14} color="#94a3b8" style={{ width: 20 }} />
+          <Text style={styles.detailText}>
+             {item.client?.name || "Client Inconnu"}
+          </Text>
+        </View>
+
+        {/* Address */}
+        <View style={styles.detailRow}>
+          <Ionicons name="location-outline" size={14} color="#94a3b8" style={{ width: 20 }} />
+          <Text style={styles.detailText} numberOfLines={1}>{item.address}</Text>
+        </View>
+
+        {/* Date */}
+        <View style={styles.detailRow}>
+          <Ionicons name="calendar-outline" size={14} color="#94a3b8" style={{ width: 20 }} />
+          <Text style={styles.dateText}>
+            {new Date(item.createdAt).toLocaleDateString('fr-FR', { 
+              weekday: 'short', day: 'numeric', month: 'short' 
+            })}
+          </Text>
         </View>
       </View>
 
-      <Text style={styles.title}>{item.serviceType}</Text>
-      
-      <View style={styles.locationRow}>
-        <Ionicons name="location-sharp" size={16} color="#666" />
-        <Text style={styles.address} numberOfLines={1}>{item.address}</Text>
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.tapText}>
-           {item.client?.name ? `Client: ${item.client.name}` : 'Voir les détails'}
-        </Text>
-        <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
+      {/* Footer Arrow */}
+      <View style={styles.cardFooter}>
+         <Text style={styles.viewDetailsText}>Voir détails</Text>
+         <Ionicons name="arrow-forward" size={16} color="#D4AF37" />
       </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
-      {/* Header Container */}
+      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+      
+      {/* Fixed Header Section */}
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Mes Missions</Text>
         
         {/* Search Bar */}
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#8E8E93" style={{ marginRight: 8 }} />
+          <Ionicons name="search" size={20} color="#94a3b8" style={{ marginRight: 8 }} />
           <TextInput 
-            placeholder="Rechercher..." 
+            placeholder="Rechercher une mission..." 
+            placeholderTextColor="#64748b"
             value={searchQuery}
             onChangeText={setSearchQuery}
             style={styles.searchInput}
@@ -129,7 +136,7 @@ export default function MissionsScreen() {
           />
         </View>
 
-        {/* 🆕 FILTER CHIPS (Horizontal Scroll) */}
+        {/* Filter Chips */}
         <View style={styles.filterContainer}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
             {FILTERS.map((filter) => (
@@ -151,13 +158,12 @@ export default function MissionsScreen() {
             ))}
           </ScrollView>
         </View>
-
       </View>
 
-      {/* List */}
+      {/* Mission List */}
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#D4AF37" />
         </View>
       ) : (
         <FlatList 
@@ -166,15 +172,22 @@ export default function MissionsScreen() {
           renderItem={renderMissionItem}
           contentContainerStyle={styles.listContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => {
-              setRefreshing(true);
-              fetchMissions();
-            }} />
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={() => {
+                setRefreshing(true);
+                fetchMissions();
+              }} 
+              tintColor="#D4AF37"
+            />
           }
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Ionicons name="clipboard-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>Aucune mission trouvée.</Text>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="clipboard-outline" size={40} color="#64748b" />
+              </View>
+              <Text style={styles.emptyTitle}>Aucune mission</Text>
+              <Text style={styles.emptyText}>Aucun résultat ne correspond à votre recherche.</Text>
             </View>
           }
         />
@@ -183,140 +196,227 @@ export default function MissionsScreen() {
   );
 }
 
+// ----------------------------------------------------------------------
+// HELPER: STATUS BADGE
+// ----------------------------------------------------------------------
+const StatusBadge = ({ status }: { status: string }) => {
+  let bgColor = 'rgba(51, 65, 85, 0.5)';
+  let borderColor = '#334155';
+  let text = status;
+  let textColor = '#cbd5e1';
+
+  if (status === 'PENDING') { 
+      bgColor = 'rgba(245, 158, 11, 0.15)'; 
+      borderColor = '#f59e0b'; 
+      text = 'En Attente'; 
+      textColor='#f59e0b'; 
+  }
+  if (status === 'ACCEPTED') { 
+      bgColor = 'rgba(212, 175, 55, 0.15)'; 
+      borderColor = '#D4AF37'; 
+      text = 'Accepté'; 
+      textColor='#D4AF37'; 
+  }
+  if (status === 'IN_PROGRESS') { 
+      bgColor = 'rgba(139, 92, 246, 0.15)'; 
+      borderColor = '#8b5cf6'; 
+      text = 'En Cours'; 
+      textColor='#8b5cf6'; 
+  }
+  if (status === 'COMPLETED') { 
+      bgColor = 'rgba(16, 185, 129, 0.15)'; 
+      borderColor = '#10b981'; 
+      text = 'Terminé'; 
+      textColor='#10b981'; 
+  }
+
+  return (
+    <View style={[styles.statusBadge, { backgroundColor: bgColor, borderColor: borderColor }]}>
+      <Text style={[styles.statusBadgeText, { color: textColor }]}>{text}</Text>
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#0f172a', // Dark Blue Background
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  
+  // --- HEADER SECTION ---
   headerContainer: {
     paddingTop: 60,
-    paddingBottom: 10,
-    backgroundColor: 'white',
+    paddingBottom: 16,
+    backgroundColor: '#0f172a',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomColor: '#1e293b',
+    zIndex: 10,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    marginBottom: 12,
-    paddingHorizontal: 16,
+    marginBottom: 16,
+    paddingHorizontal: 20,
+    color: '#FFFFFF',
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-    padding: 10,
-    borderRadius: 10,
-    marginHorizontal: 16,
-    marginBottom: 12,
+    backgroundColor: '#1e293b',
+    padding: 12,
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
+    color: '#FFFFFF',
   },
-  // 🆕 Filter Styles
+  
+  // --- FILTERS ---
   filterContainer: {
-    paddingLeft: 16,
-    paddingBottom: 4,
+    paddingLeft: 20,
   },
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#1e293b',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: '#334155',
   },
   activeChip: {
-    backgroundColor: '#007AFF', // Blue when selected
-    borderColor: '#007AFF',
+    backgroundColor: '#D4AF37', // Gold
+    borderColor: '#D4AF37',
   },
   chipText: {
     fontSize: 14,
-    color: '#666',
+    color: '#94a3b8',
     fontWeight: '600',
   },
   activeChipText: {
-    color: 'white', // White text when selected
+    color: '#0f172a', // Dark text on Gold
+    fontWeight: 'bold',
   },
-  // List Styles
+
+  // --- LIST ---
   listContent: {
-    padding: 16,
+    padding: 20,
+    paddingBottom: 40,
   },
+  
+  // --- CARD STYLES ---
   card: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 20,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 5,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
-    alignItems: 'center',
-  },
-  date: {
-    fontSize: 12,
-    color: '#8E8E93',
-    fontWeight: '600',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  statusText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#000',
-  },
-  locationRow: {
-    flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
   },
-  address: {
-    marginLeft: 4,
-    color: '#3A3A3C',
-    fontSize: 14,
+  title: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
     flex: 1,
   },
-  footer: {
-    borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
-    paddingTop: 12,
+  divider: {
+    height: 1,
+    backgroundColor: '#334155',
+    marginBottom: 12,
+  },
+  detailsContainer: {
+    gap: 8,
+    marginBottom: 16,
+  },
+  detailRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
   },
-  tapText: {
-    fontSize: 12,
-    color: '#007AFF',
-    fontWeight: '500',
+  detailText: {
+    fontSize: 14,
+    color: '#cbd5e1', // Off white
+    flex: 1,
   },
+  dateText: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+  },
+  
+  // --- CARD FOOTER ---
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 4,
+  },
+  viewDetailsText: {
+    color: '#D4AF37',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // --- BADGE ---
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  statusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+
+  // --- EMPTY STATE ---
   emptyState: {
-    marginTop: 50,
+    marginTop: 60,
     alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyIconCircle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 8,
   },
   emptyText: {
-    color: '#8E8E93',
-    fontSize: 16,
-    marginTop: 10,
+    color: '#64748b',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });

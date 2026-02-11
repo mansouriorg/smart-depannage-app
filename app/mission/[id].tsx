@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router'; // ✅ Added Stack import
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -7,6 +7,7 @@ import {
   Linking,
   Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -93,12 +94,22 @@ export default function MissionDetailScreen() {
     }
   };
 
+  // Helper for Status Color
+  const getStatusColor = (s: string) => {
+    switch(s) {
+      case 'PENDING': return '#f59e0b'; // Orange
+      case 'ACCEPTED': return '#D4AF37'; // Gold
+      case 'IN_PROGRESS': return '#8b5cf6'; // Violet
+      case 'COMPLETED': return '#10b981'; // Green
+      default: return '#64748b';
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.centerContainer}>
-        {/* ✅ HIDE DEFAULT HEADER ALSO WHILE LOADING */}
         <Stack.Screen options={{ headerShown: false }} />
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color="#D4AF37" />
       </View>
     );
   }
@@ -107,65 +118,78 @@ export default function MissionDetailScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ✅ HIDE DEFAULT HEADER (This removes the duplicate) */}
+      <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* YOUR CUSTOM HEADER */}
+      {/* CUSTOM HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#1c1c1e" />
+          <Ionicons name="arrow-back" size={24} color="#D4AF37" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Détails Mission #{id}</Text>
-        <View style={{ width: 24 }} />
+        <View style={{ width: 40 }} /> 
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         
         {/* STATUS BANNER */}
-        <View style={[styles.statusBanner, { 
-          backgroundColor: mission.status === 'COMPLETED' ? '#34C759' : 
-                          mission.status === 'IN_PROGRESS' ? '#8b5cf6' : '#007AFF' 
-        }]}>
-          <Text style={styles.statusBannerText}>Statut : {getStatusLabel(mission.status)}</Text>
+        <View style={[styles.statusBanner, { borderColor: getStatusColor(mission.status) }]}>
+          <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(mission.status) }]} />
+          <Text style={[styles.statusBannerText, { color: getStatusColor(mission.status) }]}>
+            {getStatusLabel(mission.status)}
+          </Text>
         </View>
 
         {/* CLIENT INFO CARD */}
         <View style={styles.card}>
-          <Text style={styles.label}>CLIENT</Text>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="person" size={20} color="#D4AF37" />
+            <Text style={styles.cardTitle}>CLIENT</Text>
+          </View>
+          
           <View style={styles.rowBetween}>
             <View>
-              <Text style={styles.title}>{mission.client?.name || "Client Inconnu"}</Text>
-              <Text style={styles.subtitle}>{mission.client?.phone || "Non renseigné"}</Text>
+              <Text style={styles.clientName}>{mission.client?.name || "Client Inconnu"}</Text>
+              <Text style={styles.clientPhone}>{mission.client?.phone || "Non renseigné"}</Text>
             </View>
-            <TouchableOpacity onPress={callClient} style={styles.iconButton}>
-              <Ionicons name="call" size={24} color="white" />
+            <TouchableOpacity onPress={callClient} style={styles.callButton}>
+              <Ionicons name="call" size={24} color="#0f172a" />
             </TouchableOpacity>
           </View>
         </View>
 
         {/* MISSION DETAILS CARD */}
         <View style={styles.card}>
-          <Text style={styles.label}>SERVICE</Text>
-          <Text style={styles.bodyBold}>{mission.serviceType}</Text>
+          <View style={styles.cardHeaderRow}>
+             <Ionicons name="construct" size={20} color="#D4AF37" />
+             <Text style={styles.cardTitle}>SERVICE</Text>
+          </View>
+          <Text style={styles.serviceText}>{mission.serviceType}</Text>
           
           <View style={styles.divider} />
           
-          <Text style={styles.label}>DESCRIPTION</Text>
-          <Text style={styles.body}>{mission.description || "Aucune description fournie."}</Text>
+          <View style={styles.cardHeaderRow}>
+             <Ionicons name="document-text" size={20} color="#D4AF37" />
+             <Text style={styles.cardTitle}>DESCRIPTION</Text>
+          </View>
+          <Text style={styles.bodyText}>{mission.description || "Aucune description fournie."}</Text>
 
           <View style={styles.divider} />
 
-          <Text style={styles.label}>ADRESSE</Text>
-          <TouchableOpacity onPress={openMap} style={styles.row}>
-            <Ionicons name="location" size={20} color="#007AFF" />
-            <Text style={styles.address}>{mission.address}</Text>
+          <View style={styles.cardHeaderRow}>
+             <Ionicons name="location" size={20} color="#D4AF37" />
+             <Text style={styles.cardTitle}>ADRESSE</Text>
+          </View>
+          <TouchableOpacity onPress={openMap} style={styles.addressRow}>
+            <Text style={styles.addressText}>{mission.address}</Text>
+            <Ionicons name="open-outline" size={18} color="#D4AF37" />
           </TouchableOpacity>
         </View>
 
         {/* ACTIONS */}
         <View style={styles.actionContainer}>
           {actionLoading ? (
-            <ActivityIndicator size="large" color="#007AFF" />
+            <ActivityIndicator size="large" color="#D4AF37" />
           ) : (
             <>
               {/* Button to START */}
@@ -175,6 +199,7 @@ export default function MissionDetailScreen() {
                   onPress={() => updateStatus('IN_PROGRESS')}
                 >
                   <Text style={styles.primaryButtonText}>Démarrer l'intervention</Text>
+                  <Ionicons name="play" size={20} color="#0f172a" style={{marginLeft: 8}}/>
                 </TouchableOpacity>
               )}
 
@@ -184,14 +209,15 @@ export default function MissionDetailScreen() {
                   style={styles.successButton} 
                   onPress={() => updateStatus('COMPLETED')}
                 >
-                  <Text style={styles.primaryButtonText}>Marquer comme terminé</Text>
+                  <Text style={styles.successButtonText}>Marquer comme terminé</Text>
+                  <Ionicons name="checkmark-circle" size={20} color="#fff" style={{marginLeft: 8}}/>
                 </TouchableOpacity>
               )}
 
               {/* Completed State */}
               {mission.status === 'COMPLETED' && (
                 <View style={styles.completedBox}>
-                  <Ionicons name="checkmark-circle" size={48} color="#34C759" />
+                  <Ionicons name="checkmark-done-circle" size={64} color="#10b981" />
                   <Text style={styles.completedText}>Mission Terminée</Text>
                 </View>
               )}
@@ -205,8 +231,18 @@ export default function MissionDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7' },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#0f172a' // Dark Blue Background
+  },
+  centerContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    backgroundColor: '#0f172a'
+  },
+  
+  // --- HEADER ---
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -214,30 +250,183 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingHorizontal: 20,
     paddingBottom: 20,
-    backgroundColor: 'white',
+    backgroundColor: '#0f172a',
     borderBottomWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: '#1e293b',
   },
-  headerTitle: { fontSize: 18, fontWeight: '600', color: '#1c1c1e' },
-  backButton: { padding: 4 },
-  content: { padding: 20 },
-  statusBanner: { padding: 12, borderRadius: 12, alignItems: 'center', marginBottom: 20 },
-  statusBannerText: { color: 'white', fontWeight: 'bold', fontSize: 14 },
-  card: { backgroundColor: 'white', borderRadius: 16, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  label: { fontSize: 12, color: '#8E8E93', fontWeight: '700', marginBottom: 8, textTransform: 'uppercase' },
-  title: { fontSize: 18, fontWeight: '700', color: '#000' },
-  subtitle: { fontSize: 16, color: '#666', marginTop: 4 },
-  body: { fontSize: 16, color: '#3A3A3C', lineHeight: 24 },
-  bodyBold: { fontSize: 18, fontWeight: '600', color: '#000' },
-  divider: { height: 1, backgroundColor: '#E5E5EA', marginVertical: 16 },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  address: { fontSize: 16, color: '#007AFF', marginLeft: 8, fontWeight: '500', flex: 1 },
-  iconButton: { backgroundColor: '#34C759', padding: 12, borderRadius: 24 },
-  actionContainer: { marginTop: 10, paddingBottom: 40 },
-  primaryButton: { backgroundColor: '#007AFF', height: 56, borderRadius: 14, justifyContent: 'center', alignItems: 'center', shadowColor: '#007AFF', shadowOpacity: 0.3, shadowRadius: 5 },
-  successButton: { backgroundColor: '#34C759', height: 56, borderRadius: 14, justifyContent: 'center', alignItems: 'center', shadowColor: '#34C759', shadowOpacity: 0.3, shadowRadius: 5 },
-  primaryButtonText: { color: 'white', fontSize: 18, fontWeight: 'bold' },
-  completedBox: { alignItems: 'center', padding: 20 },
-  completedText: { marginTop: 10, fontSize: 18, fontWeight: 'bold', color: '#34C759' },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    color: '#fff' 
+  },
+  backButton: { 
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#1e293b'
+  },
+  
+  content: { 
+    padding: 20,
+    paddingBottom: 40 
+  },
+
+  // --- STATUS BANNER ---
+  statusBanner: { 
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16, 
+    borderRadius: 16, 
+    marginBottom: 24,
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    gap: 10
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  statusBannerText: { 
+    fontWeight: 'bold', 
+    fontSize: 14,
+    letterSpacing: 1
+  },
+
+  // --- CARDS ---
+  card: { 
+    backgroundColor: '#1e293b', 
+    borderRadius: 20, 
+    padding: 20, 
+    marginBottom: 16, 
+    borderWidth: 1,
+    borderColor: '#334155',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 4
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8
+  },
+  cardTitle: { 
+    fontSize: 12, 
+    color: '#D4AF37', 
+    fontWeight: '800', 
+    letterSpacing: 1,
+    textTransform: 'uppercase' 
+  },
+  
+  // Client Info
+  rowBetween: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    marginTop: 8
+  },
+  clientName: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    color: '#fff' 
+  },
+  clientPhone: { 
+    fontSize: 16, 
+    color: '#94a3b8', 
+    marginTop: 4 
+  },
+  callButton: { 
+    backgroundColor: '#D4AF37', 
+    padding: 14, 
+    borderRadius: 14,
+    shadowColor: "#D4AF37",
+    shadowOpacity: 0.4,
+    shadowRadius: 5
+  },
+
+  // Service Details
+  serviceText: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    color: '#fff',
+    marginBottom: 4 
+  },
+  bodyText: { 
+    fontSize: 16, 
+    color: '#cbd5e1', 
+    lineHeight: 24 
+  },
+  addressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4
+  },
+  addressText: { 
+    fontSize: 16, 
+    color: '#e2e8f0', 
+    fontWeight: '500', 
+    flex: 1,
+    marginRight: 10
+  },
+  
+  divider: { 
+    height: 1, 
+    backgroundColor: '#334155', 
+    marginVertical: 16 
+  },
+
+  // --- ACTIONS ---
+  actionContainer: { 
+    marginTop: 10, 
+    paddingBottom: 40 
+  },
+  primaryButton: { 
+    backgroundColor: '#D4AF37', 
+    height: 56, 
+    borderRadius: 16, 
+    flexDirection: 'row',
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#D4AF37', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 5 
+  },
+  primaryButtonText: { 
+    color: '#0f172a', 
+    fontSize: 16, 
+    fontWeight: 'bold' 
+  },
+  successButton: { 
+    backgroundColor: '#10b981', 
+    height: 56, 
+    borderRadius: 16, 
+    flexDirection: 'row',
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#10b981', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 5 
+  },
+  successButtonText: {
+    color: 'white', 
+    fontSize: 16, 
+    fontWeight: 'bold'
+  },
+  completedBox: { 
+    alignItems: 'center', 
+    padding: 30,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#10b981'
+  },
+  completedText: { 
+    marginTop: 12, 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    color: '#10b981' 
+  },
 });
