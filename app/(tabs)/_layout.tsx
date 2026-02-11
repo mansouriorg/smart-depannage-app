@@ -1,23 +1,31 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Platform } from 'react-native';
 
-// ✅ On garde uniquement les icônes et les couleurs
+// ✅ Keep your existing Icon component
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/Colors';
-import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
 
   return (
     <Tabs
       screenOptions={{
-        // Couleur de l'onglet actif (Bleu par défaut)
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        // 1. THEME COLORS (Dark Blue & Gold)
+        tabBarActiveTintColor: '#D4AF37', // Gold for active tab
+        tabBarInactiveTintColor: '#64748b', // Grey for inactive tabs
+        
+        // 2. BAR STYLE (Dark Background)
+        tabBarStyle: {
+          backgroundColor: '#0f172a', // Dark Blue Background
+          borderTopWidth: 1,
+          borderTopColor: '#1e293b', // Subtle top border
+          height: Platform.OS === 'ios' ? 85 : 60, // Taller on iPhone X+
+          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+          paddingTop: 8,
+        },
+        
+        // 3. HEADER (Hidden)
         headerShown: false,
-        // 🗑️ SUPPRIMÉ : HapticTab (le bouton personnalisé)
-        // 🗑️ SUPPRIMÉ : tabBarBackground (le fond transparent/flou)
-        // 🗑️ SUPPRIMÉ : tabBarStyle (le style flottant sur iOS)
       }}>
       
       {/* 1. DASHBOARD TAB (Accueil) */}

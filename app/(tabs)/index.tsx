@@ -7,6 +7,7 @@ import {
   Alert,
   RefreshControl,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -46,18 +47,16 @@ export default function WorkerDashboard() {
     }
   };
 
-  // ✅ AUTO-REFRESH: Runs every time the screen becomes visible (focused)
+  // ✅ AUTO-REFRESH
   useFocusEffect(
     useCallback(() => {
       fetchMissions();
     }, [])
   );
 
-  // --- 2. FUNCTION: Get GPS Position & Send to Backend ---
+  // --- 2. FUNCTION: Get GPS Position ---
   const handleUpdatePosition = async () => {
     setLocationLoading(true);
-    
-    // 1. Ask Permission
     let { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission refusée', 'Nous avons besoin de votre position.');
@@ -66,12 +65,10 @@ export default function WorkerDashboard() {
     }
 
     try {
-      // 2. Get Coordinates
       let currentLocation = await Location.getCurrentPositionAsync({});
       setLocation(currentLocation);
       setStatus('online');
 
-      // 3. Reverse Geocoding (Optional, for display)
       let addressResponse = await Location.reverseGeocodeAsync({
         latitude: currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude
@@ -84,7 +81,6 @@ export default function WorkerDashboard() {
         setAddress(`${street}, ${city}`);
       }
 
-      // 🚀 4. SEND TO BACKEND (This is the new part!)
       console.log("Sending location to backend...");
       await api.patch('/users/location', {
         latitude: currentLocation.coords.latitude,
@@ -92,7 +88,6 @@ export default function WorkerDashboard() {
       });
 
       Alert.alert("Succès", "Position mise à jour et envoyée au serveur !");
-      
     } catch (error) {
       console.error("Location Error:", error);
       Alert.alert("Erreur", "Impossible de mettre à jour la localisation sur le serveur.");
@@ -114,97 +109,113 @@ export default function WorkerDashboard() {
       </View>
       
       <Text style={styles.clientName}>👤 {mission.client?.name || "Client"}</Text>
-      <Text style={styles.missionAddress}>📍 {mission.address}</Text>
+      
+      <View style={styles.locationRow}>
+        <Ionicons name="location-outline" size={14} color="#94a3b8" />
+        <Text style={styles.missionAddress}>{mission.address}</Text>
+      </View>
+      
       <Text style={styles.missionDate}>📅 {new Date(mission.createdAt).toLocaleDateString('fr-FR')}</Text>
     </TouchableOpacity>
   );
 
   return (
-    <ScrollView 
-      style={styles.container} 
-      contentContainerStyle={styles.contentContainer}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={() => {
-          setRefreshing(true);
-          fetchMissions();
-        }} />
-      }
-    >
-      
-      {/* HEADER */}
-      <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>Tech</Text>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      <ScrollView 
+        contentContainerStyle={styles.contentContainer}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchMissions();
+            }} 
+            tintColor="#D4AF37" // Gold spinner
+          />
+        }
+      >
+        
+        {/* HEADER */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>SD</Text>
+            </View>
+            <View>
+              <Text style={styles.greeting}>Espace Technicien</Text>
+              <Text style={styles.roleBadge}>Smart Dépannage</Text>
+            </View>
+          </View>
+          <View style={[styles.statusDot, { backgroundColor: status === 'online' ? '#4CAF50' : '#64748b' }]} />
         </View>
-        <View>
-          <Text style={styles.greeting}>Espace Technicien</Text>
-          <Text style={styles.roleBadge}>Smart Dépannage</Text>
-        </View>
-        <View style={[styles.statusDot, { backgroundColor: status === 'online' ? '#4CAF50' : '#ccc' }]} />
-      </View>
 
-      {/* CARD 1: GPS STATUS */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>📍 Mon Statut</Text>
-        <Text style={styles.cardSubtitle}>
-          {status === 'online' 
-            ? "Vous êtes EN LIGNE et visible." 
-            : "Signalez votre présence pour recevoir des missions."}
-        </Text>
+        {/* CARD 1: GPS STATUS */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>📍 Mon Statut</Text>
+          <Text style={styles.cardSubtitle}>
+            {status === 'online' 
+              ? "Vous êtes EN LIGNE et visible." 
+              : "Signalez votre présence pour recevoir des missions."}
+          </Text>
 
-        {location && (
-          <View style={styles.locationBox}>
-            {address ? (
-              <Text style={styles.addressText}>📌 {address}</Text>
+          {location && (
+            <View style={styles.locationBox}>
+              {address ? (
+                <Text style={styles.addressText}>📌 {address}</Text>
+              ) : (
+                <Text style={styles.locationText}>
+                  Lat: {location.coords.latitude.toFixed(4)}, Long: {location.coords.longitude.toFixed(4)}
+                </Text>
+              )}
+            </View>
+          )}
+
+          <TouchableOpacity 
+            style={[styles.bigButton, { backgroundColor: locationLoading ? '#64748b' : '#D4AF37' }]} 
+            onPress={handleUpdatePosition}
+            disabled={locationLoading}
+          >
+            {locationLoading ? (
+              <ActivityIndicator color="#0f172a" />
             ) : (
-              <Text style={styles.locationText}>
-                Lat: {location.coords.latitude.toFixed(4)}, Long: {location.coords.longitude.toFixed(4)}
-              </Text>
+              <>
+                <Ionicons name="location" size={20} color="#0f172a" style={{ marginRight: 8 }} />
+                <Text style={styles.buttonText}>
+                  {location ? "Actualiser ma position" : "Signaler ma présence"}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* CARD 2: MISSION LIST */}
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardTitle}>📋 Mes Missions</Text>
+            {missions.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{missions.length}</Text>
+              </View>
             )}
           </View>
-        )}
-
-        <TouchableOpacity 
-          style={[styles.bigButton, { backgroundColor: locationLoading ? '#ccc' : '#007AFF' }]} 
-          onPress={handleUpdatePosition}
-          disabled={locationLoading}
-        >
-          {locationLoading ? (
-            <ActivityIndicator color="white" />
+          
+          {missionsLoading ? (
+            <ActivityIndicator size="small" color="#D4AF37" style={{ margin: 20 }} />
+          ) : missions.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="document-text-outline" size={48} color="#334155" />
+              <Text style={styles.emptyText}>Aucune mission assignée.</Text>
+            </View>
           ) : (
-            <>
-              <Ionicons name="location-outline" size={24} color="white" style={{ marginRight: 8 }} />
-              <Text style={styles.buttonText}>
-                {location ? "Actualiser ma position" : "Signaler ma présence"}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      {/* CARD 2: MISSION LIST */}
-      <View style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>📋 Mes Missions</Text>
-          {missions.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{missions.length}</Text>
+            <View>
+               {missions.map(renderMissionCard)}
             </View>
           )}
         </View>
-        
-        {missionsLoading ? (
-          <ActivityIndicator size="small" color="#007AFF" style={{ margin: 20 }} />
-        ) : missions.length === 0 ? (
-          <Text style={styles.emptyText}>Aucune mission assignée pour le moment.</Text>
-        ) : (
-          <View>
-             {missions.map(renderMissionCard)}
-          </View>
-        )}
-      </View>
 
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -212,28 +223,29 @@ export default function WorkerDashboard() {
 // 4. STATUS BADGE COMPONENT
 // ----------------------------------------------------------------------
 const StatusBadge = ({ status }: { status: string }) => {
-  let color = '#64748b'; // Grey
+  let color = '#334155'; // Dark Grey Default
   let text = status;
+  let textColor = '#cbd5e1';
 
-  if (status === 'PENDING') { color = '#f59e0b'; text = 'En Attente'; } // Orange
-  if (status === 'ACCEPTED') { color = '#3b82f6'; text = 'Accepté'; } // Blue
-  if (status === 'IN_PROGRESS') { color = '#8b5cf6'; text = 'En Cours'; } // Violet
-  if (status === 'COMPLETED') { color = '#10b981'; text = 'Terminé'; } // Green
+  if (status === 'PENDING') { color = '#f59e0b'; text = 'En Attente'; textColor='#fff'; } // Orange
+  if (status === 'ACCEPTED') { color = '#0f172a'; text = 'Accepté'; textColor='#D4AF37'; } // Dark Blue with Gold text
+  if (status === 'IN_PROGRESS') { color = '#D4AF37'; text = 'En Cours'; textColor='#0f172a'; } // Gold with Dark text
+  if (status === 'COMPLETED') { color = '#10b981'; text = 'Terminé'; textColor='#fff'; } // Green
 
   return (
-    <View style={[styles.statusBadge, { backgroundColor: color }]}>
-      <Text style={styles.statusBadgeText}>{text}</Text>
+    <View style={[styles.statusBadge, { backgroundColor: color, borderColor: color === '#0f172a' ? '#D4AF37' : 'transparent', borderWidth: 1 }]}>
+      <Text style={[styles.statusBadgeText, { color: textColor }]}>{text}</Text>
     </View>
   );
 };
 
 // ----------------------------------------------------------------------
-// 5. STYLES
+// 5. STYLES (Dark Blue & Gold Theme)
 // ----------------------------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#0f172a', // Background Blue
   },
   contentContainer: {
     padding: 20,
@@ -242,48 +254,60 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 24,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   avatar: {
     width: 50,
     height: 50,
-    borderRadius: 25,
-    backgroundColor: '#007AFF',
+    borderRadius: 16,
+    backgroundColor: '#D4AF37', // Gold Avatar
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    shadowColor: "#D4AF37",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   avatarText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: '#0f172a',
+    fontSize: 18,
+    fontWeight: '900',
   },
   greeting: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#000',
+    color: '#FFFFFF', // White text
   },
   roleBadge: {
     fontSize: 14,
-    color: '#666',
+    color: '#94a3b8', // Light Grey
     marginTop: 2,
   },
   statusDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    marginLeft: 'auto',
+    borderWidth: 2,
+    borderColor: '#0f172a',
   },
   card: {
-    backgroundColor: 'white',
+    backgroundColor: '#1e293b', // Darker Card Background
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#334155', // Subtle Border
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 4,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -295,32 +319,33 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginBottom: 4,
+    color: '#D4AF37', // Gold Title
   },
   cardSubtitle: {
     fontSize: 14,
-    color: '#666',
+    color: '#94a3b8',
     marginBottom: 16,
     lineHeight: 20,
   },
   locationBox: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#0f172a', // Darkest Blue
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E0F2FE',
+    borderColor: '#334155',
   },
   locationText: {
     fontSize: 12,
-    color: '#007AFF',
+    color: '#D4AF37',
   },
   addressText: {
     fontSize: 14,
-    color: '#0f172a',
+    color: '#e2e8f0', // Off-white
     fontWeight: '600',
   },
   bigButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: '#D4AF37', // Gold Button
     borderRadius: 12,
     height: 50,
     flexDirection: 'row',
@@ -328,67 +353,77 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: {
-    color: 'white',
+    color: '#0f172a', // Dark Text on Gold
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   badge: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: '#D4AF37',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
   },
   badgeText: {
-    color: 'white',
+    color: '#0f172a',
     fontSize: 12,
     fontWeight: 'bold',
   },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
   emptyText: {
-    color: '#94a3b8',
+    color: '#64748b',
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 10,
   },
+  // Mission Item Styles
   missionItem: {
-    backgroundColor: '#F8FAFC',
-    padding: 12,
+    backgroundColor: '#0f172a', // Deep Blue inside card
+    padding: 16,
     borderRadius: 12,
-    marginBottom: 10,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#334155',
   },
   missionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   missionTitle: {
     fontWeight: '700',
     fontSize: 16,
-    color: '#1e293b',
+    color: '#FFFFFF',
   },
   clientName: {
     fontSize: 14,
-    color: '#334155',
-    marginBottom: 2,
+    color: '#94a3b8',
+    marginBottom: 4,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   missionAddress: {
     fontSize: 13,
-    color: '#64748b',
-    marginBottom: 4,
+    color: '#cbd5e1',
+    marginLeft: 4,
   },
   missionDate: {
     fontSize: 11,
-    color: '#94a3b8',
+    color: '#64748b',
     textAlign: 'right',
+    marginTop: 4,
   },
   statusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   statusBadgeText: {
-    color: 'white',
     fontSize: 10,
     fontWeight: 'bold',
   },
