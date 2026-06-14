@@ -2,9 +2,8 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 
-// ✅ IMPORT POUR VÉRIFIER LE TOKEN
-// Assurez-vous que getToken est bien exporté dans votre services/api.ts
-import { getToken } from '../services/api';
+// ✅ IMPORT POUR VÉRIFIER ET SUPPRIMER LE TOKEN
+import { getToken, removeToken } from '../services/api';
 
 export default function Index() {
   const router = useRouter();
@@ -34,6 +33,10 @@ export default function Index() {
       try {
         // A. On attend 2.5 secondes pour laisser l'animation se jouer (Branding)
         await new Promise(resolve => setTimeout(resolve, 2500));
+
+        // 🚨 THE HACK: On supprime le token de force
+        await removeToken(); 
+        console.log("🧹 Ghost token completely wiped!");
 
         // B. On vérifie si un token existe
         const token = await getToken();
