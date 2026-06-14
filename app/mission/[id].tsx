@@ -16,6 +16,8 @@ import {
 
 // ✅ Import API
 import api from '../../services/api';
+// 📸 (On garde l'import pour plus tard, même si on ne l'utilise pas dans ce hack)
+import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
 
 export default function MissionDetailScreen() {
   const router = useRouter();
@@ -24,6 +26,9 @@ export default function MissionDetailScreen() {
   const [mission, setMission] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  
+  // 📸 State conservé, mais ignoré pour le hack du simulateur
+  const [showCamera, setShowCamera] = useState(false);
 
   // 1. Fetch Mission Details on Load
   useEffect(() => {
@@ -62,25 +67,69 @@ export default function MissionDetailScreen() {
     }
   };
 
-  // 4. Update Status (Start / Finish)
+  // 4. Update Status (Only used for starting the mission now)
   const updateStatus = async (newStatus: string) => {
     setActionLoading(true);
     try {
       await api.patch(`/interventions/${id}`, { status: newStatus });
-      
       setMission((prev: any) => ({ ...prev, status: newStatus }));
-      
       Alert.alert("Succès", `Statut mis à jour : ${getStatusLabel(newStatus)}`);
-      
-      if (newStatus === 'COMPLETED') {
-        router.back(); 
-      }
     } catch (error) {
       console.error("Update Error:", error);
       Alert.alert("Erreur", "Impossible de mettre à jour le statut.");
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // 5. 📸 ✅ Handle Secure Photo Upload (Fonctionne avec le Hack)
+  const handlePhotoCapture = async (proofData: any) => {
+    setShowCamera(false);
+    setActionLoading(true);
+
+    try {
+      const formData = new FormData();
+      
+      // ✅ Si l'URI vient d'internet (comme dans notre hack), on doit ruser un peu avec FormData
+      formData.append('photo', {
+        uri: proofData.uri,
+        name: `proof_${Date.now()}.jpg`,
+        type: 'image/jpeg',
+      } as any);
+
+      formData.append('latitude', proofData.latitude.toString());
+      formData.append('longitude', proofData.longitude.toString());
+      formData.append('timestamp', proofData.timestamp);
+
+      await api.post(`/interventions/${id}/complete-work`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      Alert.alert("Félicitations !", "Mission terminée et preuve sécurisée enregistrée.");
+      
+      setMission((prev: any) => ({ ...prev, status: 'COMPLETED' }));
+      router.back();
+      
+    } catch (error) {
+      console.error("Erreur d'upload:", error);
+      Alert.alert("Erreur", "La preuve n'a pas pu être envoyée. Veuillez réessayer.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // 🛠️ 6. HACK TEMPORAIRE POUR LE SIMULATEUR
+  const simulatePhotoCapture = () => {
+    const fakeProofData = {
+      // Une image générique de plomberie trouvée sur internet
+      uri: "https://images.unsplash.com/photo-1585704032915-c3400ca199e7?q=80&w=500&auto=format&fit=crop", 
+      latitude: 36.8065,  // Coordonnées de Tunis
+      longitude: 10.1815, 
+      timestamp: new Date().toISOString(),
+    };
+    
+    // On passe directement à l'envoi sans ouvrir la caméra !
+    handlePhotoCapture(fakeProofData); 
   };
 
   const getStatusLabel = (s: string) => {
@@ -94,13 +143,12 @@ export default function MissionDetailScreen() {
     }
   };
 
-  // Helper for Status Color
   const getStatusColor = (s: string) => {
     switch(s) {
-      case 'PENDING': return '#f59e0b'; // Orange
-      case 'ACCEPTED': return '#D4AF37'; // Gold
-      case 'IN_PROGRESS': return '#8b5cf6'; // Violet
-      case 'COMPLETED': return '#10b981'; // Green
+      case 'PENDING': return '#f59e0b'; 
+      case 'ACCEPTED': return '#D4AF37'; 
+      case 'IN_PROGRESS': return '#8b5cf6'; 
+      case 'COMPLETED': return '#10b981'; 
       default: return '#64748b';
     }
   };
@@ -116,12 +164,21 @@ export default function MissionDetailScreen() {
 
   if (!mission) return null;
 
+  // 📸 On garde ça pour plus tard, mais ce ne sera pas appelé avec le hack
+  if (showCamera) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ProofOfWorkCamera onCaptureComplete={handlePhotoCapture} />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* CUSTOM HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#D4AF37" />
@@ -132,7 +189,6 @@ export default function MissionDetailScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         
-        {/* STATUS BANNER */}
         <View style={[styles.statusBanner, { borderColor: getStatusColor(mission.status) }]}>
           <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(mission.status) }]} />
           <Text style={[styles.statusBannerText, { color: getStatusColor(mission.status) }]}>
@@ -140,7 +196,6 @@ export default function MissionDetailScreen() {
           </Text>
         </View>
 
-        {/* CLIENT INFO CARD */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <Ionicons name="person" size={20} color="#D4AF37" />
@@ -158,7 +213,6 @@ export default function MissionDetailScreen() {
           </View>
         </View>
 
-        {/* MISSION DETAILS CARD */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
              <Ionicons name="construct" size={20} color="#D4AF37" />
@@ -186,13 +240,11 @@ export default function MissionDetailScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* ACTIONS */}
         <View style={styles.actionContainer}>
           {actionLoading ? (
             <ActivityIndicator size="large" color="#D4AF37" />
           ) : (
             <>
-              {/* Button to START */}
               {(mission.status === 'ACCEPTED' || mission.status === 'PENDING') && (
                 <TouchableOpacity 
                   style={styles.primaryButton} 
@@ -203,18 +255,17 @@ export default function MissionDetailScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Button to FINISH */}
+              {/* 📸 ✅ Bonton modifié pour utiliser le HACK ! */}
               {mission.status === 'IN_PROGRESS' && (
                 <TouchableOpacity 
                   style={styles.successButton} 
-                  onPress={() => updateStatus('COMPLETED')}
+                  onPress={simulatePhotoCapture} // 👈 ICI : On appelle le hack !
                 >
-                  <Text style={styles.successButtonText}>Marquer comme terminé</Text>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" style={{marginLeft: 8}}/>
+                  <Text style={styles.successButtonText}>Simuler Preuve & Terminer</Text>
+                  <Ionicons name="hardware-chip" size={20} color="#fff" style={{marginLeft: 8}}/>
                 </TouchableOpacity>
               )}
 
-              {/* Completed State */}
               {mission.status === 'COMPLETED' && (
                 <View style={styles.completedBox}>
                   <Ionicons name="checkmark-done-circle" size={64} color="#10b981" />
@@ -233,7 +284,7 @@ export default function MissionDetailScreen() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: '#0f172a' // Dark Blue Background
+    backgroundColor: '#0f172a' 
   },
   centerContainer: { 
     flex: 1, 
@@ -242,7 +293,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a'
   },
   
-  // --- HEADER ---
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -270,7 +320,6 @@ const styles = StyleSheet.create({
     paddingBottom: 40 
   },
 
-  // --- STATUS BANNER ---
   statusBanner: { 
     flexDirection: 'row',
     alignItems: 'center',
@@ -293,7 +342,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1
   },
 
-  // --- CARDS ---
   card: { 
     backgroundColor: '#1e293b', 
     borderRadius: 20, 
@@ -320,7 +368,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase' 
   },
   
-  // Client Info
   rowBetween: { 
     flexDirection: 'row', 
     justifyContent: 'space-between', 
@@ -346,7 +393,6 @@ const styles = StyleSheet.create({
     shadowRadius: 5
   },
 
-  // Service Details
   serviceText: { 
     fontSize: 18, 
     fontWeight: 'bold', 
@@ -378,7 +424,6 @@ const styles = StyleSheet.create({
     marginVertical: 16 
   },
 
-  // --- ACTIONS ---
   actionContainer: { 
     marginTop: 10, 
     paddingBottom: 40 
