@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 
 // ✅ Import API
-import api, { UPLOAD_TIMEOUT_MS } from '../../services/api';
+import api, { UPLOAD_TIMEOUT_MS, apiErrorMessage } from '../../services/api';
 // 📸 Caméra de preuve : photo + GPS + heure, prises sur le téléphone
 import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
 
@@ -98,22 +98,45 @@ export default function MissionDetailScreen() {
 
       formData.append('latitude', proofData.latitude.toString());
       formData.append('longitude', proofData.longitude.toString());
+      // Le serveur juge la photo avec la précision du GPS et l'indicateur de position simulée.
+      if (typeof proofData.accuracy === 'number') formData.append('accuracy', String(proofData.accuracy));
+      if (typeof proofData.mocked === 'boolean') formData.append('mocked', String(proofData.mocked));
       formData.append('timestamp', proofData.timestamp);
 
-      await api.post(`/interventions/${id}/complete-work`, formData, {
+      const response = await api.post(`/interventions/${id}/complete-work`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         // Une photo sur une connexion mobile faible dépasse vite 10 secondes.
         timeout: UPLOAD_TIMEOUT_MS,
       });
 
-      Alert.alert("Félicitations !", "Mission terminée et preuve sécurisée enregistrée.");
+      // Une photo que le serveur n'a pas pu valider seul est gardée et regardée par l'équipe.
+      const checked = response.data?.proof?.status === 'NEEDS_REVIEW';
+
+      Alert.alert(
+        "Félicitations !",
+        checked
+          ? "Mission terminée. Votre photo sera vérifiée par l'équipe."
+          : "Mission terminée et preuve sécurisée enregistrée.",
+      );
       
       setMission((prev: any) => ({ ...prev, status: 'COMPLETED' }));
       router.back();
       
-    } catch (error) {
-      console.error("Erreur d'upload:", error);
-      Alert.alert("Erreur", "La preuve n'a pas pu être envoyée. Veuillez réessayer.");
+    } catch (error: any) {
+      console.error("Erreur d'upload:", error?.response?.status ?? error?.message);
+
+      // Le serveur dit quoi faire ("rapprochez-vous du lieu", "prenez une nouvelle photo"...).
+      const refused = error?.response?.status === 400 && error?.response?.data?.code === 'PROOF_REJECTED';
+      const message = apiErrorMessage(error, "La preuve n'a pas pu être envoyée. Veuillez réessayer.");
+
+      if (refused) {
+        Alert.alert("Photo refusée", message, [
+          { text: "Annuler", style: "cancel" },
+          { text: "Reprendre la photo", onPress: () => setShowCamera(true) },
+        ]);
+      } else {
+        Alert.alert("Erreur", message);
+      }
     } finally {
       setActionLoading(false);
     }

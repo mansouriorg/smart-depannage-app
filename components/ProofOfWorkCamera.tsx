@@ -8,6 +8,13 @@ interface ProofData {
   uri: string;
   latitude: number;
   longitude: number;
+  /**
+   * How sure the GPS is, in metres (a radius). The server judges the photo with it: a position
+   * that is "somewhere within 3 km" proves nothing. Null when the phone does not say.
+   */
+  accuracy: number | null;
+  /** Android says when the position was simulated by an app; iOS says nothing (null). */
+  mocked: boolean | null;
   timestamp: string;
 }
 
@@ -91,6 +98,8 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
         uri: photo.uri,
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
+        accuracy: typeof location.coords.accuracy === 'number' ? location.coords.accuracy : null,
+        mocked: typeof location.mocked === 'boolean' ? location.mocked : null,
         timestamp: new Date().toISOString(),
       };
 
@@ -123,7 +132,7 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
           {/* Top Banner: Instructions */}
           <View style={styles.header}>
             <Text style={styles.headerText}>Preuve de Travail</Text>
-            <Text style={styles.subHeaderText}>GPS et Heure enregistrés automatiquement</Text>
+            <Text style={styles.subHeaderText}>Prenez la photo sur place: GPS et heure sont vérifiés</Text>
           </View>
 
           {/* Bottom Banner: Shutter Button */}

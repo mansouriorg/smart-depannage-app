@@ -192,4 +192,25 @@ api.interceptors.response.use(
   },
 );
 
+/**
+ * The sentence the server gave for a refused request (for a proof photo: "Vous semblez trop
+ * loin du lieu de l'intervention..."), to show to the person, or `fallback` when the server said
+ * nothing readable (no network, timeout, server error).
+ */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  const response = (error as { response?: { status?: number; data?: { message?: unknown } } } | null)?.response;
+
+  // "Internal server error" is nothing an artisan can act on.
+  if (typeof response?.status === 'number' && response.status >= 500) return fallback;
+
+  const message = response?.data?.message;
+  const text = Array.isArray(message)
+    ? message.filter((item): item is string => typeof item === 'string').join(' ')
+    : typeof message === 'string'
+      ? message
+      : '';
+
+  return text.trim() || fallback;
+}
+
 export default api;
