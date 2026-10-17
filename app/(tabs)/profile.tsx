@@ -1,11 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function ProfileScreen() {
-  const router = useRouter();
+import api, { endSession, getRefreshToken } from '../../services/api';
 
+export default function ProfileScreen() {
   // Mock data - This will eventually come from your NestJS backend
   const artisan = {
     name: "Ahmed Plombier",
@@ -16,9 +15,21 @@ export default function ProfileScreen() {
     joinDate: "Mars 2026",
   };
 
-  const handleLogout = () => {
-    // Add your secure storage token clearing logic here
-    router.replace('/(auth)/login'); // Adjust this route to match your auth flow
+  const handleLogout = async () => {
+    // 1. Tell the server to end this session (best effort: a missing network
+    //    must never stop the artisan from logging out on the phone).
+    try {
+      const refreshToken = await getRefreshToken();
+
+      if (refreshToken) {
+        await api.post('/auth/logout', { refreshToken });
+      }
+    } catch {
+      // ignored on purpose
+    }
+
+    // 2. Wipe the tokens from the device and go back to the login screen.
+    await endSession();
   };
 
   return (

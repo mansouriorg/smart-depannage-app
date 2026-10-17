@@ -2,8 +2,8 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 
-// ✅ IMPORT POUR VÉRIFIER ET SUPPRIMER LE TOKEN
-import { getToken, removeToken } from '../services/api';
+// ✅ IMPORT POUR VÉRIFIER SI UNE SESSION EXISTE
+import { getRefreshToken, getToken } from '../services/api';
 
 export default function Index() {
   const router = useRouter();
@@ -34,20 +34,15 @@ export default function Index() {
         // A. On attend 2.5 secondes pour laisser l'animation se jouer (Branding)
         await new Promise(resolve => setTimeout(resolve, 2500));
 
-        // 🚨 THE HACK: On supprime le token de force
-        await removeToken(); 
-        console.log("🧹 Ghost token completely wiped!");
+        // B. On vérifie si une session existe. Un access token expiré n'est
+        // pas un problème : le premier appel API reçoit un 401 et l'intercepteur
+        // (services/api.ts) renouvelle la session, ou renvoie vers le login si
+        // elle est vraiment terminée.
+        const hasSession = Boolean((await getRefreshToken()) || (await getToken()));
 
-        // B. On vérifie si un token existe
-        const token = await getToken();
-
-        if (token) {
-          // 🟢 Token trouvé -> On va direct au Dashboard
-          console.log("Token trouvé, redirection vers Dashboard...");
+        if (hasSession) {
           router.replace('/(tabs)');
         } else {
-          // 🔴 Pas de token -> On va au Login
-          console.log("Pas de token, redirection vers Login...");
           router.replace('/(auth)/login');
         }
       } catch (error) {

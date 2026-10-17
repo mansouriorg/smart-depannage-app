@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 // Define the shape of the data we send back to the Mission Details screen
 interface ProofData {
@@ -13,9 +13,11 @@ interface ProofData {
 
 interface ProofOfWorkCameraProps {
   onCaptureComplete: (data: ProofData) => void;
+  /** Lets the artisan leave the camera without taking a photo. */
+  onCancel?: () => void;
 }
 
-export default function ProofOfWorkCamera({ onCaptureComplete }: ProofOfWorkCameraProps) {
+export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: ProofOfWorkCameraProps) {
   // 1. Hardware Permissions
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationStatus, requestLocationPermission] = Location.useForegroundPermissions();
@@ -57,6 +59,11 @@ export default function ProofOfWorkCamera({ onCaptureComplete }: ProofOfWorkCame
         >
           <Text style={styles.retryButtonText}>Autoriser l'accès</Text>
         </TouchableOpacity>
+        {onCancel && (
+          <TouchableOpacity style={styles.cancelLink} onPress={onCancel}>
+            <Text style={styles.cancelLinkText}>Retour</Text>
+          </TouchableOpacity>
+        )}
       </View>
     );
   }
@@ -93,6 +100,10 @@ export default function ProofOfWorkCamera({ onCaptureComplete }: ProofOfWorkCame
     } catch (error) {
       console.error("Erreur lors de la capture :", error);
       setIsProcessing(false);
+      Alert.alert(
+        "Capture impossible",
+        "La photo ou la position GPS n'a pas pu être enregistrée. Vérifiez que le GPS est activé puis réessayez.",
+      );
     }
   };
 
@@ -117,6 +128,11 @@ export default function ProofOfWorkCamera({ onCaptureComplete }: ProofOfWorkCame
 
           {/* Bottom Banner: Shutter Button */}
           <View style={styles.footer}>
+            {onCancel && (
+              <TouchableOpacity style={styles.cancelLink} onPress={onCancel} disabled={isProcessing}>
+                <Text style={styles.cancelLinkText}>Annuler</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[styles.captureOuterRing, isProcessing && styles.captureOuterRingDisabled]}
               onPress={takeTamperProofPhoto}
@@ -220,6 +236,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 12,
+  },
+  cancelLink: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginBottom: 8,
+  },
+  cancelLinkText: {
+    color: '#cbd5e1',
+    fontSize: 16,
+    fontWeight: '600',
   },
   retryButtonText: {
     color: '#0f172a',

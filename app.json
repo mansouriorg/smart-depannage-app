@@ -39,7 +39,19 @@
           }
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Smart Dépannage utilise la caméra pour la photo de preuve de travail à la fin de chaque intervention."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Smart Dépannage enregistre votre position GPS avec la photo de preuve pour certifier le lieu de l'intervention."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

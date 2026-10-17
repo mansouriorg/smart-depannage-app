@@ -15,8 +15,8 @@ import {
 } from 'react-native';
 
 // ✅ Import API
-import api from '../../services/api';
-// 📸 (On garde l'import pour plus tard, même si on ne l'utilise pas dans ce hack)
+import api, { UPLOAD_TIMEOUT_MS } from '../../services/api';
+// 📸 Caméra de preuve : photo + GPS + heure, prises sur le téléphone
 import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
 
 export default function MissionDetailScreen() {
@@ -27,7 +27,7 @@ export default function MissionDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   
-  // 📸 State conservé, mais ignoré pour le hack du simulateur
+  // 📸 Affiche la caméra de preuve de travail
   const [showCamera, setShowCamera] = useState(false);
 
   // 1. Fetch Mission Details on Load
@@ -82,7 +82,7 @@ export default function MissionDetailScreen() {
     }
   };
 
-  // 5. 📸 ✅ Handle Secure Photo Upload (Fonctionne avec le Hack)
+  // 5. 📸 Envoi de la preuve de travail (photo, GPS et heure venant de la caméra)
   const handlePhotoCapture = async (proofData: any) => {
     setShowCamera(false);
     setActionLoading(true);
@@ -90,7 +90,6 @@ export default function MissionDetailScreen() {
     try {
       const formData = new FormData();
       
-      // ✅ Si l'URI vient d'internet (comme dans notre hack), on doit ruser un peu avec FormData
       formData.append('photo', {
         uri: proofData.uri,
         name: `proof_${Date.now()}.jpg`,
@@ -103,6 +102,8 @@ export default function MissionDetailScreen() {
 
       await api.post(`/interventions/${id}/complete-work`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        // Une photo sur une connexion mobile faible dépasse vite 10 secondes.
+        timeout: UPLOAD_TIMEOUT_MS,
       });
 
       Alert.alert("Félicitations !", "Mission terminée et preuve sécurisée enregistrée.");
@@ -118,27 +119,13 @@ export default function MissionDetailScreen() {
     }
   };
 
-  // 🛠️ 6. HACK TEMPORAIRE POUR LE SIMULATEUR
-  const simulatePhotoCapture = () => {
-    const fakeProofData = {
-      // Une image générique de plomberie trouvée sur internet
-      uri: "https://images.unsplash.com/photo-1585704032915-c3400ca199e7?q=80&w=500&auto=format&fit=crop", 
-      latitude: 36.8065,  // Coordonnées de Tunis
-      longitude: 10.1815, 
-      timestamp: new Date().toISOString(),
-    };
-    
-    // On passe directement à l'envoi sans ouvrir la caméra !
-    handlePhotoCapture(fakeProofData); 
-  };
-
   const getStatusLabel = (s: string) => {
     switch(s) {
       case 'PENDING': return 'EN ATTENTE';
       case 'ACCEPTED': return 'ACCEPTÉ';
       case 'IN_PROGRESS': return 'EN COURS';
       case 'COMPLETED': return 'TERMINÉ';
-      case 'CANCELED': return 'ANNULÉ';
+      case 'CANCELLED': return 'ANNULÉ';
       default: return s;
     }
   };
@@ -164,12 +151,15 @@ export default function MissionDetailScreen() {
 
   if (!mission) return null;
 
-  // 📸 On garde ça pour plus tard, mais ce ne sera pas appelé avec le hack
+  // 📸 Écran caméra de preuve de travail
   if (showCamera) {
     return (
       <View style={{ flex: 1, backgroundColor: '#000' }}>
         <Stack.Screen options={{ headerShown: false }} />
-        <ProofOfWorkCamera onCaptureComplete={handlePhotoCapture} />
+        <ProofOfWorkCamera
+          onCaptureComplete={handlePhotoCapture}
+          onCancel={() => setShowCamera(false)}
+        />
       </View>
     );
   }
@@ -255,14 +245,14 @@ export default function MissionDetailScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* 📸 ✅ Bonton modifié pour utiliser le HACK ! */}
+              {/* 📸 Terminer : photo de preuve réelle (GPS + heure enregistrés) */}
               {mission.status === 'IN_PROGRESS' && (
                 <TouchableOpacity 
                   style={styles.successButton} 
-                  onPress={simulatePhotoCapture} // 👈 ICI : On appelle le hack !
+                  onPress={() => setShowCamera(true)}
                 >
-                  <Text style={styles.successButtonText}>Simuler Preuve & Terminer</Text>
-                  <Ionicons name="hardware-chip" size={20} color="#fff" style={{marginLeft: 8}}/>
+                  <Text style={styles.successButtonText}>Photo de preuve & Terminer</Text>
+                  <Ionicons name="camera" size={20} color="#fff" style={{marginLeft: 8}}/>
                 </TouchableOpacity>
               )}
 

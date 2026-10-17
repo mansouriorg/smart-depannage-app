@@ -13,14 +13,15 @@ import {
 } from 'react-native';
 
 // ✅ IMPORT API SERVICE
-import api, { saveToken } from '../../services/api';
+import api, { saveTokens } from '../../services/api';
 
 export default function LoginScreen() {
   const router = useRouter();
   
-  // ⚡️ CREDENTIALS PRÉ-REMPLIS POUR LE TEST
-  const [email, setEmail] = useState('plombier@gmail.com');
-  const [password, setPassword] = useState('password123');
+  // Aucun identifiant pré-rempli : un mot de passe par défaut dans l'écran
+  // est un mot de passe par défaut en production.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -39,27 +40,26 @@ export default function LoginScreen() {
         password: password 
       });
 
-      console.log("Login Success:", response.data);
-
-      // ⚠️ 3. FIX: Get Token using the correct name from your backend log
-      // Your backend returns: { accessToken: "...", user: {...} }
-      const { accessToken } = response.data;
+      // 3. The backend returns { accessToken, refreshToken, user }.
+      // (The response is never logged: it contains the tokens.)
+      const { accessToken, refreshToken } = response.data;
 
       if (!accessToken) {
         throw new Error("Token manquant dans la réponse du serveur.");
       }
 
-      // 4. Save Token securely on the device
-      await saveToken(accessToken);
+      // 4. Save both tokens securely on the device
+      await saveTokens({ accessToken, refreshToken });
       
       // 5. Navigate to the Main App (Tabs)
       router.replace('/(tabs)'); 
 
     } catch (error: any) {
-      console.error("Login Error:", error);
-      
-      // Display a friendly error message
-      const message = error.response?.data?.message || "Échec de la connexion. Vérifiez vos identifiants ou votre réseau.";
+      // Display a friendly error message (never log credentials or tokens)
+      const message =
+        error.response?.status === 429
+          ? "Trop de tentatives. Réessayez dans quelques minutes."
+          : error.response?.data?.message || "Échec de la connexion. Vérifiez vos identifiants ou votre réseau.";
       const displayMessage = Array.isArray(message) ? message[0] : message;
       
       Alert.alert("Erreur de connexion", displayMessage);
