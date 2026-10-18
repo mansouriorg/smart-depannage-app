@@ -1,4 +1,5 @@
 import type { OffsetPaginated, Paginated } from './generated/envelope';
+import type { DispatchSort, DispatchViewId } from './generated/intervention-status';
 import type { ArtisanIntervention, BoardIntervention, ClientIntervention, TrackingIntervention } from './generated/views';
 
 /**
@@ -60,6 +61,30 @@ export interface ArtisanListQuery {
   assignable?: boolean;
 }
 
+/**
+ * What GET /admin/interventions reads: the dispatcher's list, a page at a time (P1-13). `view` is a tab
+ * (a group of statuses), `status` one status in either spelling; `sort` is `queue` (most urgent first,
+ * then the longest waiting), `newest` (the default) or `oldest`; `search` is a job number, a name, a
+ * phone, an e-mail or a piece of the address.
+ */
+export interface InterventionListQuery {
+  page?: number;
+  limit?: number;
+  view?: DispatchViewId;
+  status?: string;
+  urgency?: 'NORMAL' | 'URGENT' | 'EMERGENCY';
+  serviceType?: string;
+  search?: string;
+  sort?: DispatchSort;
+}
+
+/** What GET /matching/admin/interventions/:id/artisans reads: who could take this job. */
+export interface MatchQuery {
+  /** Only the artisans who are free (no hard obstacle): the ones a job can be given to now. */
+  onlyAvailable?: boolean;
+  limit?: number;
+}
+
 export const routes = {
   interventions: {
     /** The jobs of the signed-in artisan, in the artisan's copy. */
@@ -73,6 +98,33 @@ export const routes = {
     /** The jobs of the signed-in customer, in the customer's copy. */
     interventions: () => route<ClientIntervention[]>('get', '/client/interventions'),
     intervention: (id: number | string) => route<ClientIntervention>('get', `/client/interventions/${id}`),
+  },
+  admin: {
+    /** The dispatcher's list: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
+    interventions: <Row>(query: InterventionListQuery = {}) => route<Paginated<Row>>('get', '/admin/interventions', { params: { ...query } }),
+    /**
+     * Moves a job to another status (the server refuses a move the status table does not allow, "assigned", which
+     * is the assignment's, and "cancelled", which is the cancellation's). `expectedStatus` is the status the
+     * screen showed: if the job has moved since, nothing is written and the answer is a 409. `Row` is the job as
+     * the screen reads it.
+     */
+    changeStatus: <Row>(id: number | string, body: { status: string; note?: string; expectedStatus?: string }) =>
+      route<Row>('patch', `/admin/interventions/${id}/status`, { body }),
+    /** Cancels a job, with the reason (the customer's and the artisan's timeline say it was cancelled), and its booked visit with it. */
+    cancel: <Row>(id: number | string, body: { reason: string; expectedStatus?: string }) =>
+      route<Row>('patch', `/admin/interventions/${id}/cancel`, { body }),
+  },
+  matching: {
+    /** Who could take this job, best first, with a score and an arrival time. `Result` is the screen's own type. */
+    forIntervention: <Result>(id: number | string, query: MatchQuery = {}) =>
+      route<Result>('get', `/matching/admin/interventions/${id}/artisans`, { params: { ...query } }),
+    /**
+     * Gives the job to this artisan, through the one assignment path (approval, availability, status, notifications).
+     * `expectedArtisanId` is who the screen showed as holding the job (null: nobody): if somebody else holds it by
+     * now, nothing is written and the answer is a 409.
+     */
+    assign: <Row>(interventionId: number | string, artisanId: number | string, body: { adminNote?: string; expectedArtisanId?: number | null } = {}) =>
+      route<Row>('post', `/matching/admin/interventions/${interventionId}/assign/${artisanId}`, { body }),
   },
   users: {
     /** A page of artisans: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
