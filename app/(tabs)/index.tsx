@@ -18,6 +18,7 @@ import {
 // ✅ IMPORT API
 import api from '../../services/api';
 import { StatusBadge } from '@/components/StatusBadge';
+import { serviceNameOf } from '@/lib/shared';
 
 // ----------------------------------------------------------------------
 // 1. MAIN COMPONENT
@@ -111,7 +112,7 @@ export default function WorkerDashboard() {
           <View style={styles.iconContainer}>
             <Ionicons name="construct" size={16} color="#D4AF37" />
           </View>
-          <Text style={styles.missionTitle}>{mission.serviceType}</Text>
+          <Text style={styles.missionTitle}>{serviceNameOf(mission.serviceType)}</Text>
         </View>
         <StatusBadge status={mission.status} paddingVertical={5} />
       </View>

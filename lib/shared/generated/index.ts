@@ -5,5 +5,6 @@
 
 export * from './envelope';
 export * from './intervention-status';
+export * from './trades';
 export * from './views';
 export * as Enums from './enums';

@@ -19,7 +19,7 @@ import api, { UPLOAD_TIMEOUT_MS, apiErrorMessage } from '../../services/api';
 // 📸 Caméra de preuve : photo + GPS + heure, prises sur le téléphone
 import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
 // 🧩 Words and colours of a status, shared with the server and the other apps (P1-09)
-import { statusColor, statusLabel, statusTone } from '@/lib/shared';
+import { serviceNameOf, statusColor, statusLabel, statusTone } from '@/lib/shared';
 
 export default function MissionDetailScreen() {
   const router = useRouter();
@@ -237,7 +237,7 @@ export default function MissionDetailScreen() {
              <Ionicons name="construct" size={20} color="#D4AF37" />
              <Text style={styles.cardTitle}>SERVICE</Text>
           </View>
-          <Text style={styles.serviceText}>{mission.serviceType}</Text>
+          <Text style={styles.serviceText}>{serviceNameOf(mission.serviceType)}</Text>
           
           <View style={styles.divider} />
           

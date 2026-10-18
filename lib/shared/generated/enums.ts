@@ -6,7 +6,7 @@
 export const RoleValues = ['CLIENT', 'ARTISAN', 'ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'DISPATCHER', 'ACCOUNTANT'] as const;
 export type Role = (typeof RoleValues)[number];
 
-export const ServiceTypeValues = ['PLOMBIER', 'MENUISIER', 'SERRURIER', 'ELECTRICIEN', 'AUTRE'] as const;
+export const ServiceTypeValues = ['PLOMBIER', 'MENUISIER', 'SERRURIER', 'ELECTRICIEN', 'CHAUFFAGISTE', 'VITRIER', 'CLIMATICIEN', 'AUTRE'] as const;
 export type ServiceType = (typeof ServiceTypeValues)[number];
 
 export const StatusValues = ['CREATED', 'WAITING_ADMIN_REVIEW', 'QUOTE_SENT', 'QUOTE_ACCEPTED', 'ASSIGNED', 'ARTISAN_ACCEPTED', 'ARTISAN_ON_THE_WAY', 'ARTISAN_ARRIVED', 'IN_PROGRESS', 'WAITING_CLIENT_VALIDATION', 'COMPLETED', 'PAYMENT_PENDING', 'PAID', 'INVOICE_SENT', 'CANCELLED', 'DISPUTED', 'PENDING', 'ADMIN_REVIEW', 'ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'INVOICE_READY'] as const;

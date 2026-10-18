@@ -17,7 +17,7 @@ import {
 // ✅ IMPORT REAL API
 import api from '../../services/api';
 // 🧩 Types and words shared with the server and the other apps (P1-09)
-import { callApi, routes, type ArtisanIntervention } from '@/lib/shared';
+import { callApi, routes, serviceNameOf, type ArtisanIntervention } from '@/lib/shared';
 import { StatusBadge, displayStatus } from '@/components/StatusBadge';
 
 // 🏷️ FILTER OPTIONS
@@ -61,7 +61,7 @@ export default function MissionsScreen() {
   // --- 2. Filter Logic ---
   const filteredMissions = missions.filter(mission => {
     const query = searchQuery.toLowerCase();
-    const title = (mission.serviceType || '').toLowerCase();
+    const title = serviceNameOf(mission.serviceType).toLowerCase();
     const address = (mission.address || '').toLowerCase();
     const matchesSearch = title.includes(query) || address.includes(query);
     const matchesStatus = filterStatus === 'ALL' || displayStatus(mission.status) === filterStatus;
@@ -77,7 +77,7 @@ export default function MissionsScreen() {
     >
       {/* Header: Service Type & Badge */}
       <View style={styles.cardHeader}>
-        <Text style={styles.title}>{item.serviceType}</Text>
+        <Text style={styles.title}>{serviceNameOf(item.serviceType)}</Text>
         <StatusBadge status={item.status} />
       </View>
 
