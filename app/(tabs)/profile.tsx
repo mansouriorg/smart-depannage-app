@@ -1,63 +1,142 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import api, { endSession, getRefreshToken } from '../../services/api';
+import { call } from '../../services/call';
+import { initialsOf, memberSince, ratingText, tradesText, verificationNotice } from '../../services/display';
+import { unregisterPush } from '../../services/push';
+import { runBestEffort } from '../../services/sign-out';
+import { routes, slimProfile, type ArtisanSelf } from '@/lib/shared';
 
 export default function ProfileScreen() {
   const router = useRouter();
 
-  // Mock data - This will eventually come from your NestJS backend
-  const artisan = {
-    name: "Ahmed Plombier",
-    phone: "+216 55 555 555",
-    email: "plombier@gmail.com",
-    rating: 4.8,
-    completedMissions: 124,
-    joinDate: "Mars 2026",
-  };
+  // The real artisan (P1-15): what the server says about the signed-in account, not placeholder text.
+  const [artisan, setArtisan] = useState<ArtisanSelf | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const load = useCallback(async () => {
+    setFailed(false);
+
+    try {
+      // Only what this screen shows is kept: the bank details and the documents of the answer are dropped.
+      setArtisan(slimProfile(await call(routes.artisans.profile())));
+    } catch (error) {
+      console.error("Error fetching the profile:", error);
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   const handleLogout = async () => {
-    // 1. Tell the server to end this session (best effort: a missing network
-    //    must never stop the artisan from logging out on the phone).
+    if (signingOut) return;
+
+    setSigningOut(true);
+
     try {
-      const refreshToken = await getRefreshToken();
+      // 1. While the session still works: no more pushes to this phone for this artisan, and offline, so that
+      //    no mission is given to someone who will not hear about it. Best effort and quick (both at once, and
+      //    cancelled when the time is up): a missing network must never stop the artisan from logging out.
+      await runBestEffort([
+        (signal) => unregisterPush(signal),
+        (signal) => call(routes.artisans.goOffline(), { signal }),
+      ]);
 
-      if (refreshToken) {
-        await api.post('/auth/logout', { refreshToken });
+      // 2. Tell the server to end this session (same rule).
+      try {
+        const refreshToken = await getRefreshToken();
+
+        if (refreshToken) {
+          await api.post('/auth/logout', { refreshToken });
+        }
+      } catch {
+        // ignored on purpose
       }
-    } catch {
-      // ignored on purpose
-    }
 
-    // 2. Wipe the tokens from the device and go back to the login screen.
-    await endSession();
+      // 3. Wipe the tokens from the device and go back to the login screen.
+      await endSession();
+    } finally {
+      setSigningOut(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerBox]}>
+        <ActivityIndicator size="large" color="#D4AF37" />
+      </View>
+    );
+  }
+
+  const name = artisan?.user.name || null;
+  const since = memberSince(artisan?.user.createdAt);
+  const notice = artisan ? verificationNotice(artisan.verificationStatus) : null;
+  const zones = (artisan?.serviceZones ?? []).filter((zone) => zone.isActive).map((zone) => zone.label || zone.city).filter(Boolean);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      
+
+      {failed && !artisan ? (
+        <View style={styles.centerBox}>
+          <Text style={styles.errorText}>Impossible de charger votre profil. Vérifiez votre connexion.</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={load}>
+            <Text style={styles.retryText}>Réessayer</Text>
+          </TouchableOpacity>
+        </View>
+      ) : artisan ? (
+        <>
       {/* Header Profile Section */}
       <View style={styles.headerCard}>
         <View style={styles.avatarContainer}>
-          <Text style={styles.avatarText}>{artisan.name.charAt(0)}</Text>
+          <Text style={styles.avatarText}>{initialsOf(name).charAt(0)}</Text>
         </View>
-        <Text style={styles.name}>{artisan.name}</Text>
-        <Text style={styles.role}>Technicien Partenaire</Text>
+        <Text style={styles.name}>{name ?? artisan.user.email}</Text>
+        <Text style={styles.role}>{tradesText(artisan)}</Text>
         
-        <View style={styles.contactRow}>
-          <Ionicons name="call" size={16} color="#B69121" />
-          <Text style={styles.contactText}>{artisan.phone}</Text>
+        <View style={styles.contactStack}>
+          {artisan.user.phone ? (
+            <View style={styles.contactRow}>
+              <Ionicons name="call" size={16} color="#B69121" />
+              <Text style={styles.contactText}>{artisan.user.phone}</Text>
+            </View>
+          ) : null}
+          <View style={styles.contactRow}>
+            <Ionicons name="mail" size={16} color="#B69121" />
+            <Text style={styles.contactText}>{artisan.user.email}</Text>
+          </View>
+          {since ? (
+            <View style={styles.contactRow}>
+              <Ionicons name="calendar" size={16} color="#B69121" />
+              <Text style={styles.contactText}>{`Membre depuis ${since}`}</Text>
+            </View>
+          ) : null}
         </View>
       </View>
+
+      {notice ? (
+        <View style={styles.noticeBox}>
+          <Ionicons name="information-circle" size={20} color="#d97706" />
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      ) : null}
 
       {/* Stats Section */}
       <View style={styles.statsContainer}>
         <View style={styles.statBox}>
           <Ionicons name="star" size={24} color="#D4AF37" />
-          <Text style={styles.statValue}>{artisan.rating}</Text>
-          <Text style={styles.statLabel}>Note globale</Text>
+          <Text style={styles.statValue}>{ratingText(artisan.averageRating, artisan.ratingCount)}</Text>
+          <Text style={styles.statLabel}>{artisan.ratingCount > 0 ? `Note globale (${artisan.ratingCount})` : 'Pas encore de note'}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
@@ -66,6 +145,10 @@ export default function ProfileScreen() {
           <Text style={styles.statLabel}>Missions terminées</Text>
         </View>
       </View>
+
+      {zones.length ? <Text style={styles.zonesText}>{`Zones : ${zones.join(', ')}`}</Text> : null}
+        </>
+      ) : null}
 
       {/* Action Menu */}
       <View style={styles.menuContainer}>
@@ -111,8 +194,8 @@ export default function ProfileScreen() {
       </View>
 
       {/* Logout Button */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+      <TouchableOpacity style={[styles.logoutButton, signingOut && { opacity: 0.6 }]} onPress={handleLogout} disabled={signingOut}>
+        {signingOut ? <ActivityIndicator color="#ef4444" /> : <Ionicons name="log-out-outline" size={20} color="#ef4444" />}
         <Text style={styles.logoutText}>Se déconnecter</Text>
       </TouchableOpacity>
       
@@ -174,6 +257,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
+  contactStack: {
+    gap: 8,
+    alignItems: 'center',
+  },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -186,6 +273,51 @@ const styles = StyleSheet.create({
   contactText: {
     color: '#F3DFA2',
     fontWeight: '600',
+  },
+  noticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fde68a',
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 20,
+  },
+  noticeText: {
+    flex: 1,
+    color: '#92400e',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  centerBox: {
+    paddingVertical: 80,
+    alignItems: 'center',
+    gap: 16,
+  },
+  errorText: {
+    color: '#78716c',
+    textAlign: 'center',
+    paddingHorizontal: 30,
+    lineHeight: 22,
+  },
+  retryButton: {
+    backgroundColor: '#0f172a',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  retryText: {
+    color: '#D4AF37',
+    fontWeight: 'bold',
+  },
+  zonesText: {
+    color: '#78716c',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 14,
+    lineHeight: 20,
   },
   statsContainer: {
     flexDirection: 'row',

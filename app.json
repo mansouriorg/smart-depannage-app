@@ -41,6 +41,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-notifications",
+        {
+          "color": "#D4AF37"
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "Smart Dépannage utilise la caméra pour la photo de preuve de travail à la fin de chaque intervention."

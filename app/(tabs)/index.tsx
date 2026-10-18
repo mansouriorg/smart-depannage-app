@@ -1,11 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Platform,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -15,91 +14,176 @@ import {
   View
 } from 'react-native';
 
-// ✅ IMPORT API
-import api from '../../services/api';
+import { apiErrorMessage } from '../../services/api';
+import { call } from '../../services/call';
+import { positionNotice, sendPosition, switchAvailability, type AvailabilityDeps } from '../../services/availability';
+import { coordinatesOnFile, coordinatesText, firstNameOf, initialsOf, shortDate, verificationNotice } from '../../services/display';
+import { AvailabilityCard } from '@/components/AvailabilityCard';
 import { StatusBadge } from '@/components/StatusBadge';
-import { serviceNameOf } from '@/lib/shared';
+import {
+  availabilityView,
+  missionBucketOf,
+  routes,
+  serviceNameOf,
+  slimProfile,
+  type ArtisanIntervention,
+  type ArtisanSelf,
+} from '@/lib/shared';
+
+/** Missions to accept first, then the ones under way, then the finished ones; the newest first inside each. */
+const PILE_ORDER = { todo: 0, active: 1, done: 2 } as const;
+
+function inOrder(missions: ArtisanIntervention[]): ArtisanIntervention[] {
+  const rank = (mission: ArtisanIntervention) => {
+    const pile = missionBucketOf(mission.status);
+
+    return pile ? PILE_ORDER[pile] : 3;
+  };
+
+  return [...missions].sort((a, b) => rank(a) - rank(b) || String(b.createdAt).localeCompare(String(a.createdAt)));
+}
 
 // ----------------------------------------------------------------------
 // 1. MAIN COMPONENT
 // ----------------------------------------------------------------------
 export default function WorkerDashboard() {
   const router = useRouter();
-  
-  // Location States
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [status, setStatus] = useState<'online' | 'offline'>('offline');
+
+  // Who the artisan is and whether they are online: what the server says (P1-15), not a guess of the phone.
+  const [self, setSelf] = useState<ArtisanSelf | null>(null);
+  const [selfFailed, setSelfFailed] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const [positionLoading, setPositionLoading] = useState(false);
+  const [where, setWhere] = useState<string | null>(null);
 
   // Mission States
-  const [missions, setMissions] = useState<any[]>([]);
+  const [missions, setMissions] = useState<ArtisanIntervention[]>([]);
   const [missionsLoading, setMissionsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // --- 1. FUNCTION: Fetch Missions ---
-  const fetchMissions = async () => {
-    try {
-      const response = await api.get('/interventions/assigned');
-      setMissions(response.data);
-    } catch (error) {
-      console.error("Error fetching missions:", error);
-    } finally {
-      setMissionsLoading(false);
-      setRefreshing(false);
+  // One change of availability or position at a time, even if the finger is quicker than the screen.
+  const working = useRef(false);
+
+  // Counts the answers of the switch: a profile fetched before the switch was answered says what was true before it,
+  // and is not allowed to put the old state back on screen.
+  const profileEpoch = useRef(0);
+
+  // The point the phone read last, kept until the server has taken it: only a position the server has is shown.
+  const lastRead = useRef<{ latitude: number; longitude: number } | null>(null);
+
+  const view = self ? availabilityView(self) : null;
+
+  // --- 1. FUNCTION: Fetch the artisan and the missions ---
+  const load = async () => {
+    const epoch = profileEpoch.current;
+    const [mine, list] = await Promise.allSettled([call(routes.artisans.profile()), call(routes.interventions.assigned())]);
+
+    if (mine.status === 'fulfilled') {
+      // Only what the screens show is kept: the bank details and the documents of the answer are dropped.
+      if (epoch === profileEpoch.current) setSelf(slimProfile(mine.value));
+      setSelfFailed(false);
+    } else {
+      console.error("Error fetching the artisan:", mine.reason);
+      setSelfFailed(true);
     }
+
+    if (list.status === 'fulfilled') {
+      setMissions(list.value);
+    } else {
+      console.error("Error fetching missions:", list.reason);
+    }
+
+    setMissionsLoading(false);
+    setRefreshing(false);
   };
 
   useFocusEffect(
     useCallback(() => {
-      fetchMissions();
+      load();
     }, [])
   );
 
-  // --- 2. FUNCTION: Get GPS Position ---
-  const handleUpdatePosition = async () => {
-    setLocationLoading(true);
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission refusée', 'Nous avons besoin de votre position.');
-      setLocationLoading(false);
-      return;
-    }
+  // --- 2. FUNCTIONS: the position, and the switch ---
+  const deps: AvailabilityDeps = {
+    call,
+    readPosition: async () => {
+      const permission = await Location.requestForegroundPermissionsAsync();
+
+      if (permission.status !== 'granted') return 'denied';
+
+      const here = await Location.getCurrentPositionAsync({});
+      const point = { latitude: here.coords.latitude, longitude: here.coords.longitude };
+
+      lastRead.current = point;
+
+      return point;
+    },
+  };
+
+  // Shows the position the server has just taken: the coordinates at once, then the address when the phone finds it
+  // (a courtesy; without it the coordinates stay).
+  const showPlace = async (point: { latitude: number; longitude: number }) => {
+    setWhere(coordinatesText(point));
 
     try {
-      let currentLocation = await Location.getCurrentPositionAsync({});
-      setLocation(currentLocation);
-      setStatus('online');
+      const found = await Location.reverseGeocodeAsync(point);
+      const place = found[0];
+      const label = place ? [place.street || place.name, place.city || place.subregion].filter(Boolean).join(', ') : '';
 
-      let addressResponse = await Location.reverseGeocodeAsync({
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude
-      });
+      if (label) setWhere(label);
+    } catch {
+      // keep the coordinates
+    }
+  };
 
-      if (addressResponse.length > 0) {
-        const addr = addressResponse[0];
-        const street = addr.street || addr.name || '';
-        const city = addr.city || addr.subregion || '';
-        setAddress(`${street}, ${city}`);
-      }
+  const toggleAvailability = async () => {
+    if (working.current || !view) return;
 
-      console.log("Sending location to backend...");
-      await api.patch('/users/location', {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude
-      });
+    working.current = true;
+    setSwitching(true);
 
-      Alert.alert("Succès", "Position mise à jour !");
+    try {
+      // "Busy" is the server's word; from there the switch means going offline too.
+      const { answer, position } = await switchAvailability(view === 'offline' ? 'online' : 'offline', deps);
+
+      profileEpoch.current += 1;
+      setSelf((current) => (current ? { ...current, ...answer } : current));
+
+      if (answer.availabilityStatus === 'OFFLINE') setWhere(null);
+      else if (position === 'sent' && lastRead.current) void showPlace(lastRead.current);
+
+      const notice = positionNotice(position);
+
+      if (notice) Alert.alert('Position', notice);
     } catch (error) {
-      console.error("Location Error:", error);
-      Alert.alert("Erreur", "Impossible de mettre à jour la localisation.");
+      Alert.alert('Erreur', apiErrorMessage(error, 'Votre disponibilité n’a pas pu être changée. Réessayez.'));
     } finally {
-      setLocationLoading(false);
+      working.current = false;
+      setSwitching(false);
+    }
+  };
+
+  const refreshPosition = async () => {
+    if (working.current) return;
+
+    working.current = true;
+    setPositionLoading(true);
+
+    try {
+      const outcome = await sendPosition(deps);
+
+      if (outcome === 'sent') {
+        if (lastRead.current) void showPlace(lastRead.current);
+        Alert.alert('Position', 'Position mise à jour !');
+      } else Alert.alert('Position', positionNotice(outcome) ?? 'Position non mise à jour.');
+    } finally {
+      working.current = false;
+      setPositionLoading(false);
     }
   };
 
   // --- 3. RENDER MISSION CARD ---
-  const renderMissionCard = (mission: any) => (
+  const renderMissionCard = (mission: ArtisanIntervention) => (
     <TouchableOpacity 
       key={mission.id}
       style={styles.missionItem}
@@ -133,11 +217,7 @@ export default function WorkerDashboard() {
 
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={14} color="#94a3b8" style={styles.detailIcon} />
-          <Text style={styles.missionDate}>
-            {new Date(mission.createdAt).toLocaleDateString('fr-FR', { 
-              weekday: 'short', day: 'numeric', month: 'short' 
-            })}
-          </Text>
+          <Text style={styles.missionDate}>{shortDate(mission.createdAt)}</Text>
         </View>
       </View>
 
@@ -148,6 +228,11 @@ export default function WorkerDashboard() {
       </View>
     </TouchableOpacity>
   );
+
+  const notice = self ? verificationNotice(self.verificationStatus) : null;
+  const name = self?.user.name;
+  // The last position the server holds, until the artisan sends a new one from this screen.
+  const placeOnFile = self ? coordinatesOnFile(self.user.latitude, self.user.longitude) : null;
 
   return (
     <View style={styles.container}>
@@ -161,7 +246,7 @@ export default function WorkerDashboard() {
             refreshing={refreshing} 
             onRefresh={() => {
               setRefreshing(true);
-              fetchMissions();
+              load();
             }} 
             tintColor="#D4AF37" 
             colors={["#D4AF37"]}
@@ -174,72 +259,35 @@ export default function WorkerDashboard() {
           <View style={styles.headerLeft}>
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>SD</Text>
+                <Text style={styles.avatarText}>{initialsOf(name)}</Text>
               </View>
               {/* Online Indicator Badge */}
-              <View style={[styles.onlineBadge, { backgroundColor: status === 'online' ? '#10b981' : '#64748b' }]} />
+              <View style={[styles.onlineBadge, { backgroundColor: view === 'online' ? '#10b981' : view === 'busy' ? '#f59e0b' : '#64748b' }]} />
             </View>
             <View>
               <Text style={styles.greeting}>Bonjour,</Text>
-              <Text style={styles.roleBadge}>Technicien Smart</Text>
+              <Text style={styles.roleBadge}>{firstNameOf(name) ?? 'Technicien'}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.notifButton}>
-             <Ionicons name="notifications-outline" size={24} color="#D4AF37" />
-             <View style={styles.redDot} />
-          </TouchableOpacity>
         </View>
 
-        {/* CARD 1: GPS STATUS */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Ionicons name="navigate-circle" size={24} color="#D4AF37" />
-                <Text style={styles.cardTitle}>Ma Position</Text>
-            </View>
-            <View style={[styles.statusPill, { backgroundColor: status === 'online' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)' }]}>
-                <Text style={[styles.statusPillText, { color: status === 'online' ? '#10b981' : '#94a3b8' }]}>
-                    {status === 'online' ? '● EN LIGNE' : '○ HORS LIGNE'}
-                </Text>
-            </View>
+        {notice ? (
+          <View style={styles.noticeBox}>
+            <Ionicons name="information-circle" size={20} color="#f59e0b" />
+            <Text style={styles.noticeText}>{notice}</Text>
           </View>
+        ) : null}
 
-          <Text style={styles.cardSubtitle}>
-            {status === 'online' 
-              ? "Votre position est visible par les clients." 
-              : "Activez votre GPS pour recevoir des missions."}
-          </Text>
-
-          {location && (
-            <View style={styles.terminalBox}>
-              <Text style={styles.terminalLabel}>CURRENT_LOCATION:</Text>
-              {address ? (
-                <Text style={styles.addressText}>📌 {address}</Text>
-              ) : (
-                <Text style={styles.locationText}>
-                  LAT: {location.coords.latitude.toFixed(6)} | LNG: {location.coords.longitude.toFixed(6)}
-                </Text>
-              )}
-            </View>
-          )}
-
-          <TouchableOpacity 
-            style={[styles.bigButton, { opacity: locationLoading ? 0.7 : 1 }]} 
-            onPress={handleUpdatePosition}
-            disabled={locationLoading}
-          >
-            {locationLoading ? (
-              <ActivityIndicator color="#0f172a" />
-            ) : (
-              <>
-                <Ionicons name={status === 'online' ? "refresh" : "power"} size={20} color="#0f172a" style={{ marginRight: 8 }} />
-                <Text style={styles.buttonText}>
-                  {status === 'online' ? "Actualiser ma position" : "Activer ma disponibilité"}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+        {/* CARD 1: AVAILABILITY AND POSITION */}
+        <AvailabilityCard
+          view={view}
+          failed={selfFailed && !self}
+          busy={switching}
+          onToggle={toggleAvailability}
+          onRefreshPosition={refreshPosition}
+          refreshing={positionLoading}
+          where={where ?? placeOnFile}
+        />
 
         {/* SECTION TITLE */}
         <View style={styles.sectionHeader}>
@@ -260,8 +308,8 @@ export default function WorkerDashboard() {
               <Text style={styles.emptyText}>Vous n'avez pas encore de mission assignée pour le moment.</Text>
             </View>
           ) : (
-            <View>
-               {missions.map(renderMissionCard)}
+            <View style={{ gap: 16 }}>
+               {inOrder(missions).map(renderMissionCard)}
             </View>
           )}
         </View>
@@ -337,114 +385,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  notifButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#1e293b',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  redDot: {
-    position: 'absolute',
-    top: 10,
-    right: 12,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ef4444',
-  },
-
-  // --- CARD GENERIC ---
-  card: {
-    backgroundColor: '#1e293b',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 5,
-  },
-  cardHeaderRow: {
+  noticeBox: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  statusPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: '#94a3b8',
-    marginBottom: 20,
-    lineHeight: 22,
-  },
-  
-  // --- TERMINAL BOX ---
-  terminalBox: {
-    backgroundColor: '#020617',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
+    gap: 10,
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
     borderWidth: 1,
-    borderColor: '#334155',
-    borderLeftWidth: 4,
-    borderLeftColor: '#D4AF37',
-  },
-  terminalLabel: {
-    color: '#64748b',
-    fontSize: 10,
-    fontWeight: '700',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  locationText: {
-    fontSize: 13,
-    color: '#D4AF37',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-  },
-  addressText: {
-    fontSize: 14,
-    color: '#e2e8f0',
-    fontWeight: '500',
-  },
-
-  // --- BUTTONS ---
-  bigButton: {
-    backgroundColor: '#D4AF37',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
     borderRadius: 16,
-    height: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: "#D4AF37",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    padding: 14,
+    marginBottom: 20,
   },
-  buttonText: {
-    color: '#0f172a',
-    fontSize: 16,
-    fontWeight: '800',
+  noticeText: {
+    flex: 1,
+    color: '#fcd34d',
+    fontSize: 14,
+    lineHeight: 20,
   },
 
   // --- MISSION LIST ---
@@ -550,8 +506,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   
-  // --- STATUS BADGE ---
-
   // --- EMPTY STATE ---
   emptyState: {
     alignItems: 'center',

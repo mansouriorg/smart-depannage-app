@@ -1,11 +1,24 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs, useRouter, type Href } from 'expo-router';
+import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 
 // ✅ Keep your existing Icon component
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { registerForPush } from '../../services/push';
+import { pushGate } from '../../services/push-routing';
 
 export default function TabLayout() {
+  const router = useRouter();
+
+  // These screens are only on show for a signed-in artisan (P1-15): this is the moment to register the phone for
+  // push, and to open the mission a tap on a push was waiting to open.
+  useEffect(() => {
+    const release = pushGate.ready((href) => router.push(href as Href));
+    registerForPush();
+
+    return release;
+  }, []);
 
   return (
     <Tabs
@@ -43,6 +56,15 @@ export default function TabLayout() {
         options={{
           title: 'Missions',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="list.bullet.clipboard.fill" color={color} />,
+        }}
+      />
+
+      {/* 3. PROFILE TAB (the real artisan) */}
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profil',
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={26} color={color} />,
         }}
       />
     </Tabs>

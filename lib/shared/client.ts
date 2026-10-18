@@ -1,5 +1,7 @@
 import type { OffsetPaginated, Paginated } from './generated/envelope';
 import type { DispatchSort, DispatchViewId } from './generated/intervention-status';
+import type { ArtisanAvailabilityAnswer, ArtisanSelf, MissionRefusalAnswer } from './artisan';
+import type { MissionRejectionReason } from './generated/enums';
 import type { ArtisanIntervention, BoardIntervention, ClientIntervention, TrackingIntervention } from './generated/views';
 
 /**
@@ -85,6 +87,14 @@ export interface MatchQuery {
   limit?: number;
 }
 
+/** What POST /notifications/push-tokens takes: the token of this phone, and what it is (all optional but the token). */
+export interface PushTokenBody {
+  token: string;
+  platform?: string;
+  deviceId?: string;
+  deviceName?: string;
+}
+
 export const routes = {
   interventions: {
     /** The jobs of the signed-in artisan, in the artisan's copy. */
@@ -93,6 +103,30 @@ export const routes = {
     oneAsArtisan: (id: number | string) => route<ArtisanIntervention | BoardIntervention>('get', `/interventions/${id}`),
     /** The tracking page of a visitor: the job, with the link's token. */
     track: (id: number | string, token: string) => route<TrackingIntervention>('get', `/interventions/track/${id}`, { params: { token } }),
+  },
+  artisans: {
+    /** The signed-in artisan: who they are, whether they are online, how many jobs they closed (P1-15). */
+    profile: () => route<ArtisanSelf>('get', '/artisans/me/profile'),
+    /** Goes online and starts accepting jobs. */
+    goOnline: () => route<ArtisanAvailabilityAnswer>('patch', '/artisans/me/online'),
+    /** Goes offline and stops accepting jobs. */
+    goOffline: () => route<ArtisanAvailabilityAnswer>('patch', '/artisans/me/offline'),
+    /** Tells the server where the artisan is. It does not change whether they are online. */
+    location: (body: { latitude: number; longitude: number }) => route<unknown>('patch', '/artisans/me/location', { body }),
+    /** Accepts a job that was given to the artisan. */
+    accept: (id: number | string) => route<ArtisanIntervention>('post', `/artisans/me/missions/${id}/accept`),
+    /** Refuses a job, or hands it back after accepting it: it returns to the dispatcher's queue. */
+    decline: (id: number | string, body: { reason: MissionRejectionReason; note?: string }) =>
+      route<MissionRefusalAnswer>('post', `/artisans/me/missions/${id}/reject`, { body }),
+    onTheWay: (id: number | string) => route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/on-the-way`),
+    arrived: (id: number | string) => route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/arrived`),
+    start: (id: number | string) => route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/start`),
+  },
+  notifications: {
+    /** Registers this phone for push notifications (the token moves to the signed-in person if it was another's). */
+    registerPushToken: (body: PushTokenBody) => route<unknown>('post', '/notifications/push-tokens', { body }),
+    /** Stops pushes to this phone for the signed-in person (on sign-out). The token is encoded: it holds brackets. */
+    removePushToken: (token: string) => route<{ success: boolean }>('delete', `/notifications/push-tokens/${encodeURIComponent(token)}`),
   },
   client: {
     /** The jobs of the signed-in customer, in the customer's copy. */

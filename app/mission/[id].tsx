@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Linking,
   Platform,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -16,48 +17,155 @@ import {
 
 // ✅ Import API
 import api, { UPLOAD_TIMEOUT_MS, apiErrorMessage } from '../../services/api';
+import { call } from '../../services/call';
+import {
+  STEP_FAILURE,
+  declineBody,
+  isOwnMission,
+  stepRoute,
+  waitingFor,
+  withAnswer,
+} from '../../services/mission-steps';
 // 📸 Caméra de preuve : photo + GPS + heure, prises sur le téléphone
 import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
-// 🧩 Words and colours of a status, shared with the server and the other apps (P1-09)
-import { serviceNameOf, statusColor, statusLabel, statusTone } from '@/lib/shared';
+import { DeclineModal } from '@/components/DeclineModal';
+import { MissionTimeline } from '@/components/MissionTimeline';
+import { StatusBadge } from '@/components/StatusBadge';
+// 🧩 The flow of a mission, the words of a status and the coordinates of a job, shared with the server and the other apps (P1-09, P1-15)
+import {
+  apiErrorStatus,
+  coordinatesOf,
+  missionBucketOf,
+  missionRefusal,
+  navigationLinks,
+  nextMissionStep,
+  recordIdOf,
+  routes,
+  serviceNameOf,
+  type ArtisanIntervention,
+  type MissionRejectionReason,
+  type MissionStep,
+} from '@/lib/shared';
+
+/** The icon of the button of each step. */
+const STEP_ICONS: Record<MissionStep, keyof typeof Ionicons.glyphMap> = {
+  accept: 'checkmark-circle',
+  'on-the-way': 'car',
+  arrived: 'location',
+  start: 'play',
+  complete: 'camera',
+};
 
 export default function MissionDetailScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams(); 
+  const params = useLocalSearchParams<{ id?: string | string[] }>();
+  const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
+  // A link can carry anything in its address (a path, a number too large): only a job number is looked up.
+  const parsedId = recordIdOf(rawId);
+  const id = parsedId === null ? undefined : String(parsedId);
 
-  const [mission, setMission] = useState<any>(null);
+  const [mission, setMission] = useState<ArtisanIntervention | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  
+
   // 📸 Affiche la caméra de preuve de travail
   const [showCamera, setShowCamera] = useState(false);
+  // Le choix de la raison d'un refus
+  const [declining, setDeclining] = useState(false);
 
-  // 1. Fetch Mission Details on Load
-  useEffect(() => {
-    const fetchMissionDetails = async () => {
+  // One action at a time, even if the finger is quicker than the screen.
+  const working = useRef(false);
+  // The mission on screen: an answer that comes back for another one (a push opened a different mission) is dropped.
+  const onScreen = useRef(id);
+
+  /** Back to where the artisan came from; from a push there is nothing to go back to, so the list. */
+  const leave = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)');
+  }, [router]);
+
+  // 1. Fetch Mission Details: on opening (a failure takes the artisan back), on a pull to refresh (a failure is
+  // told, the screen stays) and to check again after the server refused an action (silent: the refusal was told).
+  const load = useCallback(
+    async (mode: 'open' | 'refresh' | 'recheck') => {
+      const wanted = id;
+
+      if (!wanted) {
+        Alert.alert('Mission introuvable', 'Ce lien ne correspond à aucune de vos missions.');
+        setLoading(false);
+        leave();
+        return;
+      }
+
       try {
-        const response = await api.get(`/interventions/${id}`);
-        setMission(response.data);
+        const job = await call(routes.interventions.oneAsArtisan(wanted));
+
+        if (onScreen.current !== wanted) return;
+
+        // The board's copy comes back for a job nobody holds: it is no longer this artisan's.
+        if (!isOwnMission(job)) {
+          if (mode !== 'recheck') Alert.alert('Mission indisponible', 'Cette mission ne vous est plus attribuée.');
+          leave();
+          return;
+        }
+
+        setMission(job);
       } catch (error) {
         console.error("Error fetching details:", error);
-        Alert.alert("Erreur", "Impossible de charger les détails.");
-        router.back();
-      } finally {
-        setLoading(false);
-      }
-    };
 
-    if (id) fetchMissionDetails();
+        if (mode === 'recheck') return;
+
+        Alert.alert("Erreur", apiErrorMessage(error, mode === 'open' ? "Impossible de charger les détails." : "Impossible d'actualiser la mission."));
+
+        if (mode === 'open') leave();
+      } finally {
+        if (onScreen.current === wanted) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [id, leave],
+  );
+
+  // The effect below must not start again because `load` was made again: it follows the mission, nothing else.
+  const loadNow = useRef(load);
+
+  useEffect(() => {
+    loadNow.current = load;
+  }, [load]);
+
+  useEffect(() => {
+    onScreen.current = id;
+    working.current = false;
+    setMission(null);
+    setLoading(true);
+    setShowCamera(false);
+    setDeclining(false);
+    setActionLoading(false);
+
+    loadNow.current('open');
   }, [id]);
 
-  // 2. Helper to open Maps
-  const openMap = () => {
-    if (!mission?.address) return;
-    const url = Platform.select({
-      ios: `maps:0,0?q=${encodeURIComponent(mission.address)}`,
-      android: `geo:0,0?q=${encodeURIComponent(mission.address)}`,
-    });
-    Linking.openURL(url || "");
+  // 2. Navigation: the point the job is at, in the artisan's map application (not the street name, which can be anywhere)
+  const point = coordinatesOf(mission);
+
+  const openNavigation = async () => {
+    if (!mission || !point) return;
+
+    const links = navigationLinks(point, `Mission #${mission.id}`);
+    const first = Platform.select({ ios: links.apple, android: links.geo, default: links.google });
+
+    try {
+      await Linking.openURL(first);
+    } catch {
+      try {
+        await Linking.openURL(links.google);
+      } catch {
+        Alert.alert("Navigation", "Aucune application de cartes n'a pu être ouverte.");
+      }
+    }
   };
 
   // 3. Helper to Call Client
@@ -69,23 +177,59 @@ export default function MissionDetailScreen() {
     }
   };
 
-  // 4. Update Status (Only used for starting the mission now)
-  const updateStatus = async (newStatus: string) => {
+  /** Runs one action: one at a time, and if the server says no, the screen is brought back to what the server says. */
+  const perform = async (work: () => Promise<void>, failure: string) => {
+    if (working.current) return;
+
+    const wanted = id;
+
+    working.current = true;
     setActionLoading(true);
+
     try {
-      await api.patch(`/interventions/${id}`, { status: newStatus });
-      setMission((prev: any) => ({ ...prev, status: newStatus }));
-      Alert.alert("Succès", `Statut mis à jour : ${getStatusLabel(newStatus)}`);
+      await work();
     } catch (error) {
-      console.error("Update Error:", error);
-      Alert.alert("Erreur", "Impossible de mettre à jour le statut.");
+      console.error("Mission action error:", apiErrorStatus(error) ?? (error as Error)?.message);
+      Alert.alert("Erreur", apiErrorMessage(error, failure));
+
+      // The server answered "no": the job may have moved (cancelled, handed to somebody else). Look again.
+      if (apiErrorStatus(error) !== null) loadNow.current('recheck');
     } finally {
-      setActionLoading(false);
+      if (onScreen.current === wanted) {
+        working.current = false;
+        setActionLoading(false);
+      }
     }
   };
 
-  // 5. 📸 Envoi de la preuve de travail (photo, GPS et heure venant de la caméra)
+  // 4. One step: accept, on the way, arrived, start (each one is recorded by the server, with the time)
+  const runStep = (step: Exclude<MissionStep, 'complete'>) =>
+    perform(async () => {
+      const wanted = id as string;
+      const answer = await call(stepRoute(step, wanted));
+
+      if (onScreen.current === wanted) setMission((prev) => (prev ? withAnswer(prev, answer) : prev));
+    }, STEP_FAILURE[step]);
+
+  // 5. Refuse, or give back: the reason goes to the dispatcher, the mission goes back to the queue
+  const decline = (reason: MissionRejectionReason, note: string) =>
+    perform(async () => {
+      const wanted = id as string;
+
+      await call(routes.artisans.decline(wanted, declineBody(reason, note)));
+
+      // Off this mission first: it is no longer the artisan's, and an alert shown while the window of reasons is
+      // still closing can be lost on an iPhone. The word comes a moment later, on the screen they land on.
+      setDeclining(false);
+      leave();
+      setTimeout(() => Alert.alert("Mission rendue", "L'équipe a été prévenue et va chercher un autre technicien."), 400);
+    }, "La mission n'a pas pu être rendue. Réessayez.");
+
+  // 6. 📸 Envoi de la preuve de travail (photo, GPS et heure venant de la caméra)
   const handlePhotoCapture = async (proofData: any) => {
+    if (working.current) return;
+
+    working.current = true;
     setShowCamera(false);
     setActionLoading(true);
 
@@ -120,9 +264,8 @@ export default function MissionDetailScreen() {
           ? "Mission terminée. Votre photo sera vérifiée par l'équipe."
           : "Mission terminée et preuve sécurisée enregistrée.",
       );
-      
-      setMission((prev: any) => ({ ...prev, status: 'COMPLETED' }));
-      router.back();
+
+      leave();
       
     } catch (error: any) {
       console.error("Erreur d'upload:", error?.response?.status ?? error?.message);
@@ -138,34 +281,13 @@ export default function MissionDetailScreen() {
         ]);
       } else {
         Alert.alert("Erreur", message);
+
+        // The job may have been closed by a first try whose answer got lost: look again.
+        if (apiErrorStatus(error) !== null) loadNow.current('recheck');
       }
     } finally {
+      working.current = false;
       setActionLoading(false);
-    }
-  };
-
-  const getStatusLabel = (s: string) => {
-    switch(s) {
-      case 'PENDING':
-      case 'CREATED': return 'EN ATTENTE';
-      case 'ACCEPTED':
-      case 'ARTISAN_ACCEPTED': return 'ACCEPTÉ';
-      case 'IN_PROGRESS': return 'EN COURS';
-      case 'COMPLETED': return 'TERMINÉ';
-      case 'CANCELLED': return 'ANNULÉ';
-      default: return statusLabel(s).toUpperCase();
-    }
-  };
-
-  const getStatusColor = (s: string) => {
-    switch(s) {
-      case 'PENDING':
-      case 'CREATED': return '#f59e0b'; 
-      case 'ACCEPTED':
-      case 'ARTISAN_ACCEPTED': return '#D4AF37'; 
-      case 'IN_PROGRESS': return '#8b5cf6'; 
-      case 'COMPLETED': return '#10b981'; 
-      default: return statusColor(statusTone(s));
     }
   };
 
@@ -193,26 +315,42 @@ export default function MissionDetailScreen() {
     );
   }
 
+  const next = nextMissionStep(mission.status);
+  const refusal = missionRefusal(mission.status);
+  const hint = waitingFor(mission.status);
+  const over = missionBucketOf(mission.status) === 'done';
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={leave} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color="#D4AF37" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Détails Mission #{id}</Text>
         <View style={{ width: 40 }} /> 
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadNow.current('refresh');
+            }}
+            tintColor="#D4AF37"
+            colors={["#D4AF37"]}
+          />
+        }
+      >
         
-        <View style={[styles.statusBanner, { borderColor: getStatusColor(mission.status) }]}>
-          <View style={[styles.statusIndicator, { backgroundColor: getStatusColor(mission.status) }]} />
-          <Text style={[styles.statusBannerText, { color: getStatusColor(mission.status) }]}>
-            {getStatusLabel(mission.status)}
-          </Text>
+        <View style={styles.statusBanner}>
+          <StatusBadge status={mission.status} large />
+          {hint ? <Text style={styles.statusHint}>{hint}</Text> : null}
         </View>
 
         <View style={styles.card}>
@@ -253,10 +391,24 @@ export default function MissionDetailScreen() {
              <Ionicons name="location" size={20} color="#D4AF37" />
              <Text style={styles.cardTitle}>ADRESSE</Text>
           </View>
-          <TouchableOpacity onPress={openMap} style={styles.addressRow}>
-            <Text style={styles.addressText}>{mission.address}</Text>
-            <Ionicons name="open-outline" size={18} color="#D4AF37" />
-          </TouchableOpacity>
+          <Text style={styles.addressText}>{mission.address}</Text>
+
+          {point ? (
+            <TouchableOpacity onPress={openNavigation} style={styles.routeButton} accessibilityRole="button">
+              <Ionicons name="navigate" size={18} color="#D4AF37" />
+              <Text style={styles.routeButtonText}>Itinéraire vers le lieu</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.noPointText}>La position GPS de ce lieu n'est pas enregistrée : suivez l'adresse ci-dessus.</Text>
+          )}
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.cardHeaderRow}>
+            <Ionicons name="git-commit" size={20} color="#D4AF37" />
+            <Text style={styles.cardTitle}>DÉROULEMENT</Text>
+          </View>
+          <MissionTimeline job={mission} />
         </View>
 
         <View style={styles.actionContainer}>
@@ -264,28 +416,24 @@ export default function MissionDetailScreen() {
             <ActivityIndicator size="large" color="#D4AF37" />
           ) : (
             <>
-              {(mission.status === 'ACCEPTED' || mission.status === 'PENDING') && (
+              {/* The next step, and only that one (the status table says which) */}
+              {next && (
                 <TouchableOpacity 
-                  style={styles.primaryButton} 
-                  onPress={() => updateStatus('IN_PROGRESS')}
+                  style={next.needsProof ? styles.successButton : styles.primaryButton} 
+                  onPress={() => (next.step === 'complete' ? setShowCamera(true) : runStep(next.step))}
                 >
-                  <Text style={styles.primaryButtonText}>Démarrer l'intervention</Text>
-                  <Ionicons name="play" size={20} color="#0f172a" style={{marginLeft: 8}}/>
+                  <Text style={next.needsProof ? styles.successButtonText : styles.primaryButtonText}>{next.label}</Text>
+                  <Ionicons name={STEP_ICONS[next.step]} size={20} color={next.needsProof ? '#fff' : '#0f172a'} style={{marginLeft: 8}}/>
                 </TouchableOpacity>
               )}
 
-              {/* 📸 Terminer : photo de preuve réelle (GPS + heure enregistrés) */}
-              {mission.status === 'IN_PROGRESS' && (
-                <TouchableOpacity 
-                  style={styles.successButton} 
-                  onPress={() => setShowCamera(true)}
-                >
-                  <Text style={styles.successButtonText}>Photo de preuve & Terminer</Text>
-                  <Ionicons name="camera" size={20} color="#fff" style={{marginLeft: 8}}/>
+              {refusal && (
+                <TouchableOpacity style={styles.refuseButton} onPress={() => setDeclining(true)}>
+                  <Text style={styles.refuseButtonText}>{refusal.label}</Text>
                 </TouchableOpacity>
               )}
 
-              {mission.status === 'COMPLETED' && (
+              {over && (
                 <View style={styles.completedBox}>
                   <Ionicons name="checkmark-done-circle" size={64} color="#10b981" />
                   <Text style={styles.completedText}>Mission Terminée</Text>
@@ -296,6 +444,14 @@ export default function MissionDetailScreen() {
         </View>
 
       </ScrollView>
+
+      <DeclineModal
+        visible={declining}
+        question={refusal?.question ?? 'Pourquoi rendez-vous cette mission ?'}
+        busy={actionLoading}
+        onCancel={() => setDeclining(false)}
+        onConfirm={decline}
+      />
     </View>
   );
 }
@@ -339,26 +495,19 @@ const styles = StyleSheet.create({
     paddingBottom: 40 
   },
 
-  statusBanner: { 
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16, 
-    borderRadius: 16, 
-    marginBottom: 24,
+  statusBanner: {
     backgroundColor: '#1e293b',
+    borderRadius: 16,
     borderWidth: 1,
-    gap: 10
+    borderColor: '#334155',
+    padding: 16,
+    marginBottom: 24,
+    gap: 10,
   },
-  statusIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  statusBannerText: { 
-    fontWeight: 'bold', 
+  statusHint: {
+    color: '#cbd5e1',
     fontSize: 14,
-    letterSpacing: 1
+    lineHeight: 20,
   },
 
   card: { 
@@ -423,12 +572,6 @@ const styles = StyleSheet.create({
     color: '#cbd5e1', 
     lineHeight: 24 
   },
-  addressRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4
-  },
   addressText: { 
     fontSize: 16, 
     color: '#e2e8f0', 
@@ -437,6 +580,21 @@ const styles = StyleSheet.create({
     marginRight: 10
   },
   
+  routeButton: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#D4AF37',
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+  },
+  routeButtonText: { color: '#D4AF37', fontSize: 15, fontWeight: '700' },
+  noPointText: { marginTop: 10, color: '#94a3b8', fontSize: 13, lineHeight: 18 },
+
   divider: { 
     height: 1, 
     backgroundColor: '#334155', 
@@ -479,6 +637,17 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     fontWeight: 'bold'
   },
+  refuseButton: {
+    marginTop: 12,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+  },
+  refuseButtonText: { color: '#ef4444', fontSize: 15, fontWeight: '700' },
   completedBox: { 
     alignItems: 'center', 
     padding: 30,

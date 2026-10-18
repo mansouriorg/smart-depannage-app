@@ -17,17 +17,14 @@ import {
 // ✅ IMPORT REAL API
 import api from '../../services/api';
 // 🧩 Types and words shared with the server and the other apps (P1-09)
-import { callApi, routes, serviceNameOf, type ArtisanIntervention } from '@/lib/shared';
-import { StatusBadge, displayStatus } from '@/components/StatusBadge';
+import { MISSION_BUCKETS, callApi, missionBucketOf, routes, serviceNameOf, type ArtisanIntervention } from '@/lib/shared';
+import { StatusBadge } from '@/components/StatusBadge';
+import { shortDate } from '../../services/display';
 
-// 🏷️ FILTER OPTIONS
-const FILTERS = [
-  { id: 'ALL', label: 'Tout' },
-  { id: 'PENDING', label: 'En attente' },
-  { id: 'ACCEPTED', label: 'Accepté' },
-  { id: 'IN_PROGRESS', label: 'En cours' },
-  { id: 'COMPLETED', label: 'Terminé' },
-];
+// 🏷️ FILTER OPTIONS: the piles the shared package sorts a mission in (to accept, under way, over), whatever
+// spelling or step the status is in. The list used to know four spellings, so a mission that was on the way
+// or had arrived matched no filter.
+const FILTERS = [{ id: 'ALL', label: 'Tout' }, ...MISSION_BUCKETS];
 
 export default function MissionsScreen() {
   const router = useRouter();
@@ -64,7 +61,7 @@ export default function MissionsScreen() {
     const title = serviceNameOf(mission.serviceType).toLowerCase();
     const address = (mission.address || '').toLowerCase();
     const matchesSearch = title.includes(query) || address.includes(query);
-    const matchesStatus = filterStatus === 'ALL' || displayStatus(mission.status) === filterStatus;
+    const matchesStatus = filterStatus === 'ALL' || missionBucketOf(mission.status) === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
@@ -102,11 +99,7 @@ export default function MissionsScreen() {
         {/* Date */}
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={14} color="#94a3b8" style={{ width: 20 }} />
-          <Text style={styles.dateText}>
-            {new Date(item.createdAt).toLocaleDateString('fr-FR', { 
-              weekday: 'short', day: 'numeric', month: 'short' 
-            })}
-          </Text>
+          <Text style={styles.dateText}>{shortDate(item.createdAt)}</Text>
         </View>
       </View>
 

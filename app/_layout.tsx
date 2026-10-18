@@ -1,7 +1,37 @@
+import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar'; // ✅ Controls the top system bar color
+import { useEffect, useRef } from 'react';
+
+import { configurePushDisplay } from '../services/push';
+import { missionHrefFromPush, pushGate } from '../services/push-routing';
+
+// How a push is shown while the app is open must be set before the first one arrives (P1-15).
+configurePushDisplay();
+
+/**
+ * A tap on a push opens the mission it is about (P1-15). The hook gives the tap that started the app as well as
+ * the ones that come after. The gate keeps a tap until the signed-in screens are on show, so that the welcome
+ * screen (or the login) does not undo it.
+ */
+function usePushTaps() {
+  const last = Notifications.useLastNotificationResponse();
+  const handled = useRef<unknown>(null);
+
+  useEffect(() => {
+    if (!last || handled.current === last) return;
+
+    handled.current = last;
+
+    if (last.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+
+    pushGate.tapped(missionHrefFromPush(last.notification.request.content.data));
+  }, [last]);
+}
 
 export default function RootLayout() {
+  usePushTaps();
+
   return (
     <>
       {/* 1. Set Status Bar to Light (White text) for Dark Background */}
