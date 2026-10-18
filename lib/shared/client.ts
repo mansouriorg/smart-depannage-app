@@ -103,6 +103,17 @@ export const routes = {
     /** The dispatcher's list: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
     interventions: <Row>(query: InterventionListQuery = {}) => route<Paginated<Row>>('get', '/admin/interventions', { params: { ...query } }),
     /**
+     * The case file of a job (P1-14): the job with its customer and technician, the whole timeline (the lines the
+     * people of the job do not read are marked `internal`), every chat, and the notes of the team. `File` is the
+     * screen's own type. For the roles that work on jobs; a number that is no job's is a 404.
+     */
+    intervention: <File>(id: number | string) => route<File>('get', `/admin/interventions/${id}`),
+    /**
+     * Writes a note on a job that only the back office reads (at most 2000 characters, never blank). The answer is
+     * the note as the case file lists it, with its author. `Note` is the screen's own type.
+     */
+    addNote: <Note>(id: number | string, body: { content: string }) => route<Note>('post', `/admin/interventions/${id}/internal-notes`, { body }),
+    /**
      * Moves a job to another status (the server refuses a move the status table does not allow, "assigned", which
      * is the assignment's, and "cancelled", which is the cancellation's). `expectedStatus` is the status the
      * screen showed: if the job has moved since, nothing is written and the answer is a 409. `Row` is the job as
