@@ -16,6 +16,9 @@ import {
 
 // ✅ IMPORT REAL API
 import api from '../../services/api';
+// 🧩 Types and words shared with the server and the other apps (P1-09)
+import { callApi, routes, type ArtisanIntervention } from '@/lib/shared';
+import { StatusBadge, displayStatus } from '@/components/StatusBadge';
 
 // 🏷️ FILTER OPTIONS
 const FILTERS = [
@@ -32,15 +35,15 @@ export default function MissionsScreen() {
   // States
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('ALL'); 
-  const [missions, setMissions] = useState<any[]>([]); 
+  const [missions, setMissions] = useState<ArtisanIntervention[]>([]); 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   // --- 1. Fetch Real Missions ---
   const fetchMissions = async () => {
     try {
-      const response = await api.get('/interventions/assigned');
-      setMissions(response.data);
+      // The answer is typed by the server's own list of what an artisan may read: a field it no longer sends does not compile.
+      setMissions(await callApi((config) => api.request(config), routes.interventions.assigned()));
     } catch (error) {
       console.error("Error fetching missions:", error);
     } finally {
@@ -61,12 +64,12 @@ export default function MissionsScreen() {
     const title = (mission.serviceType || '').toLowerCase();
     const address = (mission.address || '').toLowerCase();
     const matchesSearch = title.includes(query) || address.includes(query);
-    const matchesStatus = filterStatus === 'ALL' || mission.status === filterStatus;
+    const matchesStatus = filterStatus === 'ALL' || displayStatus(mission.status) === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
   // --- 3. Render Item ---
-  const renderMissionItem = ({ item }: { item: any }) => (
+  const renderMissionItem = ({ item }: { item: ArtisanIntervention }) => (
     <TouchableOpacity 
       style={styles.card} 
       activeOpacity={0.7}
@@ -195,47 +198,6 @@ export default function MissionsScreen() {
     </View>
   );
 }
-
-// ----------------------------------------------------------------------
-// HELPER: STATUS BADGE
-// ----------------------------------------------------------------------
-const StatusBadge = ({ status }: { status: string }) => {
-  let bgColor = 'rgba(51, 65, 85, 0.5)';
-  let borderColor = '#334155';
-  let text = status;
-  let textColor = '#cbd5e1';
-
-  if (status === 'PENDING') { 
-      bgColor = 'rgba(245, 158, 11, 0.15)'; 
-      borderColor = '#f59e0b'; 
-      text = 'En Attente'; 
-      textColor='#f59e0b'; 
-  }
-  if (status === 'ACCEPTED') { 
-      bgColor = 'rgba(212, 175, 55, 0.15)'; 
-      borderColor = '#D4AF37'; 
-      text = 'Accepté'; 
-      textColor='#D4AF37'; 
-  }
-  if (status === 'IN_PROGRESS') { 
-      bgColor = 'rgba(139, 92, 246, 0.15)'; 
-      borderColor = '#8b5cf6'; 
-      text = 'En Cours'; 
-      textColor='#8b5cf6'; 
-  }
-  if (status === 'COMPLETED') { 
-      bgColor = 'rgba(16, 185, 129, 0.15)'; 
-      borderColor = '#10b981'; 
-      text = 'Terminé'; 
-      textColor='#10b981'; 
-  }
-
-  return (
-    <View style={[styles.statusBadge, { backgroundColor: bgColor, borderColor: borderColor }]}>
-      <Text style={[styles.statusBadgeText, { color: textColor }]}>{text}</Text>
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -378,17 +340,6 @@ const styles = StyleSheet.create({
   },
 
   // --- BADGE ---
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
 
   // --- EMPTY STATE ---
   emptyState: {

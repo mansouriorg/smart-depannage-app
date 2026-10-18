@@ -17,6 +17,7 @@ import {
 
 // ✅ IMPORT API
 import api from '../../services/api';
+import { StatusBadge } from '@/components/StatusBadge';
 
 // ----------------------------------------------------------------------
 // 1. MAIN COMPONENT
@@ -112,7 +113,7 @@ export default function WorkerDashboard() {
           </View>
           <Text style={styles.missionTitle}>{mission.serviceType}</Text>
         </View>
-        <StatusBadge status={mission.status} />
+        <StatusBadge status={mission.status} paddingVertical={5} />
       </View>
       
       <View style={styles.divider} />
@@ -269,50 +270,6 @@ export default function WorkerDashboard() {
   );
 }
 
-// ----------------------------------------------------------------------
-// 4. STATUS BADGE COMPONENT
-// ----------------------------------------------------------------------
-const StatusBadge = ({ status }: { status: string }) => {
-  let bgColor = 'rgba(51, 65, 85, 0.5)';
-  let borderColor = '#334155';
-  let text = status;
-  let textColor = '#cbd5e1';
-
-  if (status === 'PENDING') { 
-      bgColor = 'rgba(245, 158, 11, 0.15)'; 
-      borderColor = '#f59e0b'; 
-      text = 'En Attente'; 
-      textColor='#f59e0b'; 
-  }
-  if (status === 'ACCEPTED') { 
-      bgColor = 'rgba(212, 175, 55, 0.15)'; 
-      borderColor = '#D4AF37'; 
-      text = 'Accepté'; 
-      textColor='#D4AF37'; 
-  }
-  if (status === 'IN_PROGRESS') { 
-      bgColor = 'rgba(139, 92, 246, 0.15)'; 
-      borderColor = '#8b5cf6'; 
-      text = 'En Cours'; 
-      textColor='#8b5cf6'; 
-  }
-  if (status === 'COMPLETED') { 
-      bgColor = 'rgba(16, 185, 129, 0.15)'; 
-      borderColor = '#10b981'; 
-      text = 'Terminé'; 
-      textColor='#10b981'; 
-  }
-
-  return (
-    <View style={[styles.statusBadge, { backgroundColor: bgColor, borderColor: borderColor }]}>
-      <Text style={[styles.statusBadgeText, { color: textColor }]}>{text}</Text>
-    </View>
-  );
-};
-
-// ----------------------------------------------------------------------
-// 5. STYLES (Modern Dark Theme)
-// ----------------------------------------------------------------------
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -593,17 +550,6 @@ const styles = StyleSheet.create({
   },
   
   // --- STATUS BADGE ---
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
 
   // --- EMPTY STATE ---
   emptyState: {

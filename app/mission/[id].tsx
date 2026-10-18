@@ -18,6 +18,8 @@ import {
 import api, { UPLOAD_TIMEOUT_MS, apiErrorMessage } from '../../services/api';
 // 📸 Caméra de preuve : photo + GPS + heure, prises sur le téléphone
 import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
+// 🧩 Words and colours of a status, shared with the server and the other apps (P1-09)
+import { statusColor, statusLabel, statusTone } from '@/lib/shared';
 
 export default function MissionDetailScreen() {
   const router = useRouter();
@@ -144,22 +146,26 @@ export default function MissionDetailScreen() {
 
   const getStatusLabel = (s: string) => {
     switch(s) {
-      case 'PENDING': return 'EN ATTENTE';
-      case 'ACCEPTED': return 'ACCEPTÉ';
+      case 'PENDING':
+      case 'CREATED': return 'EN ATTENTE';
+      case 'ACCEPTED':
+      case 'ARTISAN_ACCEPTED': return 'ACCEPTÉ';
       case 'IN_PROGRESS': return 'EN COURS';
       case 'COMPLETED': return 'TERMINÉ';
       case 'CANCELLED': return 'ANNULÉ';
-      default: return s;
+      default: return statusLabel(s).toUpperCase();
     }
   };
 
   const getStatusColor = (s: string) => {
     switch(s) {
-      case 'PENDING': return '#f59e0b'; 
-      case 'ACCEPTED': return '#D4AF37'; 
+      case 'PENDING':
+      case 'CREATED': return '#f59e0b'; 
+      case 'ACCEPTED':
+      case 'ARTISAN_ACCEPTED': return '#D4AF37'; 
       case 'IN_PROGRESS': return '#8b5cf6'; 
       case 'COMPLETED': return '#10b981'; 
-      default: return '#64748b';
+      default: return statusColor(statusTone(s));
     }
   };
 
