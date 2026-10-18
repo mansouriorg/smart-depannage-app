@@ -12,7 +12,7 @@ export type ServiceType = (typeof ServiceTypeValues)[number];
 export const StatusValues = ['CREATED', 'WAITING_ADMIN_REVIEW', 'QUOTE_SENT', 'QUOTE_ACCEPTED', 'ASSIGNED', 'ARTISAN_ACCEPTED', 'ARTISAN_ON_THE_WAY', 'ARTISAN_ARRIVED', 'IN_PROGRESS', 'WAITING_CLIENT_VALIDATION', 'COMPLETED', 'PAYMENT_PENDING', 'PAID', 'INVOICE_SENT', 'CANCELLED', 'DISPUTED', 'PENDING', 'ADMIN_REVIEW', 'ACCEPTED', 'ON_THE_WAY', 'ARRIVED', 'INVOICE_READY'] as const;
 export type Status = (typeof StatusValues)[number];
 
-export const ApplicationStatusValues = ['PENDING', 'APPROVED', 'REJECTED'] as const;
+export const ApplicationStatusValues = ['PENDING', 'APPROVED', 'REJECTED', 'MIGRATED'] as const;
 export type ApplicationStatus = (typeof ApplicationStatusValues)[number];
 
 export const AuthTokenTypeValues = ['REFRESH', 'PASSWORD_RESET', 'EMAIL_VERIFICATION', 'PHONE_VERIFICATION', 'GUEST_MAGIC_LINK', 'GUEST_OTP', 'EMAIL_CHANGE', 'PHONE_CHANGE'] as const;

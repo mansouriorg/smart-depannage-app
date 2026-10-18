@@ -42,6 +42,12 @@ export default function RootLayout() {
           options={{ headerShown: false }} 
         />
         
+        {/* Change password (P1-11): a screen with the dark header and a back button */}
+        <Stack.Screen 
+          name="change-password" 
+          options={{ title: 'Mot de passe' }} 
+        />
+
         {/* 6. Modals (Will inherit the Dark Theme above) */}
         <Stack.Screen 
           name="modal" 

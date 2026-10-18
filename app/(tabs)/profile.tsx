@@ -1,10 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import api, { endSession, getRefreshToken } from '../../services/api';
 
 export default function ProfileScreen() {
+  const router = useRouter();
+
   // Mock data - This will eventually come from your NestJS backend
   const artisan = {
     name: "Ahmed Plombier",
@@ -82,6 +85,16 @@ export default function ProfileScreen() {
               <Ionicons name="time-outline" size={20} color="#0f172a" />
             </View>
             <Text style={styles.menuText}>Historique des interventions</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#a8a29e" />
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/change-password')}>
+          <View style={styles.menuItemLeft}>
+            <View style={styles.menuIconBox}>
+              <Ionicons name="lock-closed-outline" size={20} color="#0f172a" />
+            </View>
+            <Text style={styles.menuText}>Changer mon mot de passe</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#a8a29e" />
         </TouchableOpacity>
