@@ -7,3 +7,7 @@ export * from './artisan';
 export * from './mission-flow';
 export * from './navigation';
 export * from './push';
+export * from './phone';
+export * from './bot-check';
+export * from './guest';
+export * from './tracking';

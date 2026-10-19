@@ -3,6 +3,16 @@ import type { DispatchSort, DispatchViewId } from './generated/intervention-stat
 import type { ArtisanAvailabilityAnswer, ArtisanSelf, MissionRefusalAnswer } from './artisan';
 import type { MissionRejectionReason } from './generated/enums';
 import type { ArtisanIntervention, BoardIntervention, ClientIntervention, TrackingIntervention } from './generated/views';
+import type { BotChallenge } from './bot-check';
+import type {
+  GuestCreated,
+  GuestFeedbackBody,
+  GuestPhotosAnswer,
+  GuestProblemAnswer,
+  GuestProblemBody,
+  GuestRequestBody,
+  PublicCategory,
+} from './guest';
 
 /**
  * The routes the apps call, with the type of what each answers.
@@ -103,6 +113,27 @@ export const routes = {
     oneAsArtisan: (id: number | string) => route<ArtisanIntervention | BoardIntervention>('get', `/interventions/${id}`),
     /** The tracking page of a visitor: the job, with the link's token. */
     track: (id: number | string, token: string) => route<TrackingIntervention>('get', `/interventions/track/${id}`, { params: { token } }),
+  },
+  catalog: {
+    /** The public catalog: every active category with its active sub-services (no sign-in). */
+    all: () => route<PublicCategory[]>('get', '/services'),
+  },
+  guest: {
+    /** The challenge the request form solves in the background (P1-16). `{ enabled: false }` when the server has the check off. */
+    challenge: () => route<BotChallenge>('get', '/guest/challenge'),
+    /** Makes a request without an account. The answer carries the tracking link, once. */
+    create: (body: GuestRequestBody) => route<GuestCreated>('post', '/guest/interventions', { body }),
+    /** The tracking page of a visitor: the job, with the link's token. */
+    track: (id: number | string, token: string) => route<TrackingIntervention>('get', `/guest/tracking/${id}`, { params: { token } }),
+    /** Adds pictures to an open request: `body` is a FormData with up to 5 files in the field `photos`. */
+    photos: (id: number | string, token: string, body: unknown) =>
+      route<GuestPhotosAnswer>('post', `/guest/interventions/${id}/photos`, { params: { token }, body }),
+    /** The customer's opinion on a finished job. It is kept as a review that waits for the team; a second one is a 409. */
+    feedback: (id: number | string, token: string, body: GuestFeedbackBody) =>
+      route<TrackingIntervention>('post', `/guest/interventions/${id}/feedback`, { params: { token }, body }),
+    /** A problem: it opens a complaint the support team reads. */
+    problem: (id: number | string, token: string, body: GuestProblemBody) =>
+      route<GuestProblemAnswer>('post', `/guest/interventions/${id}/problems`, { params: { token }, body }),
   },
   artisans: {
     /** The signed-in artisan: who they are, whether they are online, how many jobs they closed (P1-15). */
