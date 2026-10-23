@@ -48,6 +48,7 @@ export type ClientInterventionQuote = {
   interventionId: number;
   title: string;
   description: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
@@ -159,6 +160,7 @@ export type ClientInterventionPayment = {
     interventionId: number;
     title: string;
     description: string | null;
+    currency: string;
     amountHT: number;
     taxRate: number;
     taxAmount: number;
@@ -191,6 +193,7 @@ export type ClientInterventionPayment = {
     interventionAddress: string | null;
     serviceType: ServiceType | null;
     subServiceName: string | null;
+    currency: string;
     amountHT: number;
     taxRate: number;
     taxAmount: number;
@@ -226,6 +229,7 @@ export type ClientInterventionInvoice = {
   interventionAddress: string | null;
   serviceType: ServiceType | null;
   subServiceName: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
@@ -522,6 +526,7 @@ export type TrackingInterventionQuote = {
   interventionId: number;
   title: string;
   description: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
@@ -633,6 +638,7 @@ export type TrackingInterventionPayment = {
     interventionId: number;
     title: string;
     description: string | null;
+    currency: string;
     amountHT: number;
     taxRate: number;
     taxAmount: number;
@@ -665,6 +671,7 @@ export type TrackingInterventionPayment = {
     interventionAddress: string | null;
     serviceType: ServiceType | null;
     subServiceName: string | null;
+    currency: string;
     amountHT: number;
     taxRate: number;
     taxAmount: number;
@@ -700,6 +707,7 @@ export type TrackingInterventionInvoice = {
   interventionAddress: string | null;
   serviceType: ServiceType | null;
   subServiceName: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
@@ -927,6 +935,7 @@ export type ArtisanInterventionQuote = {
   interventionId: number;
   title: string;
   description: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
@@ -1034,6 +1043,7 @@ export type ArtisanInterventionPayment = {
     interventionId: number;
     title: string;
     description: string | null;
+    currency: string;
     amountHT: number;
     taxRate: number;
     taxAmount: number;
@@ -1066,6 +1076,7 @@ export type ArtisanInterventionPayment = {
     interventionAddress: string | null;
     serviceType: ServiceType | null;
     subServiceName: string | null;
+    currency: string;
     amountHT: number;
     taxRate: number;
     taxAmount: number;
@@ -1097,6 +1108,7 @@ export type ArtisanInterventionInvoice = {
   interventionAddress: string | null;
   serviceType: ServiceType | null;
   subServiceName: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
@@ -1325,6 +1337,7 @@ export type BoardInterventionQuote = {
   interventionId: number;
   title: string;
   description: string | null;
+  currency: string;
   amountHT: number;
   taxRate: number;
   taxAmount: number;
