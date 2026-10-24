@@ -2,7 +2,9 @@ import type { OffsetPaginated, Paginated } from './generated/envelope';
 import type { DispatchSort, DispatchViewId } from './generated/intervention-status';
 import type { ArtisanAvailabilityAnswer, ArtisanSelf, MissionRefusalAnswer } from './artisan';
 import type { MissionRejectionReason } from './generated/enums';
-import type { ArtisanIntervention, BoardIntervention, ClientIntervention, TrackingIntervention } from './generated/views';
+import type { ArtisanIntervention, ArtisanInterventionQuote, BoardIntervention, ClientIntervention, TrackingIntervention } from './generated/views';
+import type { CashPosition, CollectCashAnswer, CollectCashBody, LedgerPage, LedgerQuery } from './cash';
+import type { QuoteBody } from './quote-builder';
 import type { BotChallenge } from './bot-check';
 import type {
   GuestCreated,
@@ -109,14 +111,28 @@ export const routes = {
   interventions: {
     /** The jobs of the signed-in artisan, in the artisan's copy. */
     assigned: () => route<ArtisanIntervention[]>('get', '/interventions/assigned'),
-    /** One job, for an artisan: their own copy when it is theirs, the board's copy while nobody has it. */
-    oneAsArtisan: (id: number | string) => route<ArtisanIntervention | BoardIntervention>('get', `/interventions/${id}`),
     /** The tracking page of a visitor: the job, with the link's token. */
     track: (id: number | string, token: string) => route<TrackingIntervention>('get', `/interventions/track/${id}`, { params: { token } }),
   },
   catalog: {
     /** The public catalog: every active category with its active sub-services (no sign-in). */
     all: () => route<PublicCategory[]>('get', '/services'),
+  },
+  quotes: {
+    /** Makes a quote on a mission of the signed-in artisan and sends it to the customer in the same call (P2-05). */
+    create: (interventionId: number | string, body: QuoteBody) => route<ArtisanInterventionQuote>('post', `/quotes/interventions/${interventionId}`, { body }),
+    /** Changes a quote that is out and not yet accepted: the customer who reads it again sees a new revision (P2-04). */
+    update: (quoteId: number | string, body: QuoteBody) => route<ArtisanInterventionQuote>('patch', `/quotes/${quoteId}`, { body }),
+    /** Sends a quote again to the customer who asked for a change, once the artisan has changed it: until then the customer cannot accept it. */
+    send: (quoteId: number | string) => route<ArtisanInterventionQuote>('post', `/quotes/${quoteId}/send`),
+  },
+  cash: {
+    /** What is left to take on a mission, and whether the artisan may take it now. */
+    position: (interventionId: number | string) => route<CashPosition>('get', `/cash-ledger/interventions/${interventionId}/position`),
+    /** Says how much cash the customer gave. The same `requestKey` sent twice writes one collection. */
+    collect: (interventionId: number | string, body: CollectCashBody) => route<CollectCashAnswer>('post', `/cash-ledger/interventions/${interventionId}/collect-cash`, { body }),
+    /** The artisan's own balance and lines, the newest first, a page at a time. */
+    mine: (query: LedgerQuery = {}) => route<LedgerPage>('get', '/cash-ledger/mine', { params: { ...query } }),
   },
   guest: {
     /** The challenge the request form solves in the background (P1-16). `{ enabled: false }` when the server has the check off. */
@@ -144,6 +160,12 @@ export const routes = {
     goOffline: () => route<ArtisanAvailabilityAnswer>('patch', '/artisans/me/offline'),
     /** Tells the server where the artisan is. It does not change whether they are online. */
     location: (body: { latitude: number; longitude: number }) => route<unknown>('patch', '/artisans/me/location', { body }),
+    /**
+     * One job as its artisan reads it: the customer, the catalog service, the quotes with their lines, the payments, the invoice
+     * and, once the job is theirs, its timeline and messages. (`GET /interventions/:id` has none of the quotes, the service or
+     * the payments: a screen that needs them reads this route.) A job nobody holds comes back as the board's copy.
+     */
+    mission: (id: number | string) => route<ArtisanIntervention | BoardIntervention>('get', `/artisans/me/missions/${id}`),
     /** Accepts a job that was given to the artisan. */
     accept: (id: number | string) => route<ArtisanIntervention>('post', `/artisans/me/missions/${id}/accept`),
     /** Refuses a job, or hands it back after accepting it: it returns to the dispatcher's queue. */

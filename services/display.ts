@@ -75,6 +75,38 @@ export function shortDate(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
+/** The year of a moment in the time of Tunis, or on the clock of the phone when it has no time-zone data. */
+function yearInTunis(date: Date): number {
+  try {
+    return Number(date.toLocaleString('en-US', { timeZone: 'Africa/Tunis', year: 'numeric' }));
+  } catch {
+    return date.getFullYear();
+  }
+}
+
+/**
+ * "24 oct., 14:02", in the time of Tunis (the time a customer and an artisan of Tunisia read on their clocks). A moment of another
+ * year than `now`'s carries its year ("24 oct. 2025, 14:02"): a line of a ledger can be older than a year.
+ */
+export function shortDateTime(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return '';
+
+  const date = new Date(iso);
+
+  if (Number.isNaN(date.getTime())) return '';
+
+  const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' };
+
+  if (yearInTunis(date) !== yearInTunis(now)) options.year = 'numeric';
+
+  try {
+    return date.toLocaleString('fr-FR', { timeZone: 'Africa/Tunis', ...options });
+  } catch {
+    // A phone without time-zone data still shows the moment, on its own clock.
+    return date.toLocaleString('fr-FR', options);
+  }
+}
+
 /** "09:05" */
 export function clockTime(iso: string | null | undefined): string {
   if (!iso) return '';

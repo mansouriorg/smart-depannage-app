@@ -11,3 +11,6 @@ export * from './phone';
 export * from './bot-check';
 export * from './guest';
 export * from './tracking';
+export * from './money';
+export * from './quote-builder';
+export * from './cash';

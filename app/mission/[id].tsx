@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,12 +28,15 @@ import {
 } from '../../services/mission-steps';
 // 📸 Caméra de preuve : photo + GPS + heure, prises sur le téléphone
 import ProofOfWorkCamera from '@/components/ProofOfWorkCamera';
+import { CashCard } from '@/components/CashCard';
 import { DeclineModal } from '@/components/DeclineModal';
 import { MissionTimeline } from '@/components/MissionTimeline';
+import { QuoteCard } from '@/components/QuoteCard';
 import { StatusBadge } from '@/components/StatusBadge';
 // 🧩 The flow of a mission, the words of a status and the coordinates of a job, shared with the server and the other apps (P1-09, P1-15)
 import {
   apiErrorStatus,
+  canQuote,
   coordinatesOf,
   missionBucketOf,
   missionRefusal,
@@ -43,6 +46,7 @@ import {
   routes,
   serviceNameOf,
   type ArtisanIntervention,
+  type CashPosition,
   type MissionRejectionReason,
   type MissionStep,
 } from '@/lib/shared';
@@ -65,6 +69,10 @@ export default function MissionDetailScreen() {
   const id = parsedId === null ? undefined : String(parsedId);
 
   const [mission, setMission] = useState<ArtisanIntervention | null>(null);
+  // What the customer has paid and what is left (P2-05); null until it is read, and when it could not be read.
+  const [position, setPosition] = useState<CashPosition | null>(null);
+  // The figures on the card are old: the artisan came back from a screen that may have changed them, or the last read failed.
+  const [positionStale, setPositionStale] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -78,12 +86,39 @@ export default function MissionDetailScreen() {
   const working = useRef(false);
   // The mission on screen: an answer that comes back for another one (a push opened a different mission) is dropped.
   const onScreen = useRef(id);
+  // The newest read wins: an older answer that comes back late is dropped (the mission, and the position, each count their own).
+  const askedMission = useRef(0);
+  const askedPosition = useRef(0);
+  // A money screen is opened once per tap, even for a double tap (two builders stacked would each send the quote).
+  const opening = useRef(false);
 
   /** Back to where the artisan came from; from a push there is nothing to go back to, so the list. */
   const leave = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)');
   }, [router]);
+
+  /**
+   * The cash position of the mission, for the cash card. It only decorates the screen, so a failure is silent: the card
+   * stays as it was (or absent), and the cash screen reads it again anyway.
+   */
+  const loadPosition = useCallback(async (wanted: string) => {
+    const mine = (askedPosition.current += 1);
+
+    try {
+      const read = await call(routes.cash.position(wanted));
+
+      if (onScreen.current === wanted && askedPosition.current === mine) {
+        setPosition(read);
+        setPositionStale(false);
+      }
+    } catch (error) {
+      console.error('Error fetching the cash position:', apiErrorStatus(error) ?? (error as Error)?.message);
+
+      // The figures on the card, if any, are no longer known to be right: the button waits for the next read.
+      if (onScreen.current === wanted && askedPosition.current === mine) setPositionStale(true);
+    }
+  }, []);
 
   // 1. Fetch Mission Details: on opening (a failure takes the artisan back), on a pull to refresh (a failure is
   // told, the screen stays) and to check again after the server refused an action (silent: the refusal was told).
@@ -98,10 +133,15 @@ export default function MissionDetailScreen() {
         return;
       }
 
-      try {
-        const job = await call(routes.interventions.oneAsArtisan(wanted));
+      const mine = (askedMission.current += 1);
 
-        if (onScreen.current !== wanted) return;
+      // The position does not wait for the mission: a mission that cannot be read must not leave old figures on the card.
+      void loadPosition(wanted);
+
+      try {
+        const job = await call(routes.artisans.mission(wanted));
+
+        if (onScreen.current !== wanted || askedMission.current !== mine) return;
 
         // The board's copy comes back for a job nobody holds: it is no longer this artisan's.
         if (!isOwnMission(job)) {
@@ -112,7 +152,9 @@ export default function MissionDetailScreen() {
 
         setMission(job);
       } catch (error) {
-        console.error("Error fetching details:", error);
+        console.error('Error fetching details:', apiErrorStatus(error) ?? (error as Error)?.message);
+
+        if (onScreen.current !== wanted || askedMission.current !== mine) return;
 
         if (mode === 'recheck') return;
 
@@ -120,13 +162,13 @@ export default function MissionDetailScreen() {
 
         if (mode === 'open') leave();
       } finally {
-        if (onScreen.current === wanted) {
+        if (onScreen.current === wanted && askedMission.current === mine) {
           setLoading(false);
           setRefreshing(false);
         }
       }
     },
-    [id, leave],
+    [id, leave, loadPosition],
   );
 
   // The effect below must not start again because `load` was made again: it follows the mission, nothing else.
@@ -139,14 +181,55 @@ export default function MissionDetailScreen() {
   useEffect(() => {
     onScreen.current = id;
     working.current = false;
+    opening.current = false;
+    askedMission.current += 1;
+    askedPosition.current += 1;
     setMission(null);
+    setPosition(null);
+    setPositionStale(false);
     setLoading(true);
     setShowCamera(false);
     setDeclining(false);
     setActionLoading(false);
 
     loadNow.current('open');
+
+    return () => {
+      // Off the screen: an answer that comes back later changes nothing and shows nothing.
+      onScreen.current = undefined;
+    };
   }, [id]);
+
+  // Back from the quote screen or the cash screen (or from any other screen): the quote and the payment may have moved.
+  // The first focus is the opening, which the effect above already loads.
+  const opened = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      opening.current = false;
+
+      if (!opened.current) {
+        opened.current = true;
+        return;
+      }
+
+      // The quote and the payment may have moved while another screen was open: the card waits for the new figures.
+      setPositionStale(true);
+      loadNow.current('recheck');
+    }, []),
+  );
+
+  /** Opens a screen of the money flow, once per tap. */
+  const openScreen = (href: Href) => {
+    if (opening.current) return;
+
+    opening.current = true;
+    router.push(href);
+    // If the screen never took the focus (the push was refused), the card works again after a moment.
+    setTimeout(() => {
+      opening.current = false;
+    }, 1500);
+  };
 
   // 2. Navigation: the point the job is at, in the artisan's map application (not the street name, which can be anywhere)
   const point = coordinatesOf(mission);
@@ -402,6 +485,18 @@ export default function MissionDetailScreen() {
             <Text style={styles.noPointText}>La position GPS de ce lieu n'est pas enregistrée : suivez l'adresse ci-dessus.</Text>
           )}
         </View>
+
+        {/* The quote: shown from the acceptance of the mission, and afterwards if there is one to talk about */}
+        {canQuote(mission.status) || (mission.quotes ?? []).length > 0 ? (
+          <QuoteCard
+            job={mission}
+            onMake={() => openScreen(`/quote/${mission.id}` as Href)}
+            onChange={(quoteId) => openScreen(`/quote/${mission.id}?edit=${quoteId}` as Href)}
+          />
+        ) : null}
+
+        {/* The payment: the card shows itself only when the mission has something to pay */}
+        <CashCard position={position} stale={positionStale} onCollect={() => openScreen(`/cash/${mission.id}` as Href)} />
 
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>

@@ -59,7 +59,16 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 3. PROFILE TAB (the real artisan) */}
+      {/* 3. EARNINGS TAB (cash taken and the balance owed to the platform) */}
+      <Tabs.Screen
+        name="earnings"
+        options={{
+          title: 'Gains',
+          tabBarIcon: ({ color }) => <Ionicons name="wallet" size={26} color={color} />,
+        }}
+      />
+
+      {/* 4. PROFILE TAB (the real artisan) */}
       <Tabs.Screen
         name="profile"
         options={{
