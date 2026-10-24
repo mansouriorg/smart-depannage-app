@@ -1,6 +1,6 @@
 import { canonicalStatus, type CanonicalStatus } from './generated/intervention-status';
 import type { TrackingInterventionInvoice, TrackingInterventionPayment, TrackingInterventionQuote } from './generated/views';
-import { formatMillimes, formatQuantity, toMillimes } from './money';
+import { formatMillimes, toDinars, toMillimes } from './money';
 import type { StatusTone } from './status';
 
 /**
@@ -78,11 +78,20 @@ export interface DocumentLine {
   totalText: string;
 }
 
+/** A quantity the way the PDF writes it: up to three decimals, a comma ("2", "1,5", "2,505"). */
+export function quantityText(quantity: number | string): string {
+  const number = Number(quantity);
+
+  if (!Number.isFinite(number)) return '';
+
+  return String(Math.round(number * 1000) / 1000).replace('.', ',');
+}
+
 export function documentLines(items: readonly Line[] | null | undefined, currency?: string | null): DocumentLine[] {
   return (items ?? []).map((line) => ({
     label: line.label,
     description: line.description?.trim() ? line.description.trim() : null,
-    quantityText: formatQuantity(Math.round(Number(line.quantity) * 100)),
+    quantityText: quantityText(line.quantity),
     unitText: moneyText(line.unitPrice, currency),
     totalText: moneyText(line.total, currency),
   }));
@@ -525,24 +534,84 @@ export function pdfLink(pdfUrl: string | null | undefined): string | null {
   return HTTPS_LINK.test(link) ? link : null;
 }
 
+/** One credit note taken off the invoice, as the customer reads it. */
+export interface CreditNoteLine {
+  id: number;
+  number: string;
+  /** "Émis le 25 octobre 2026". */
+  issuedText: string | null;
+  reason: string | null;
+  /** What it takes off, with its sign: "- 19,000 DT". */
+  amountText: string;
+  /** The PDF of the credit note when the page can link to it. */
+  href: string | null;
+}
+
+/** The totals of an invoice: the lines of a quote, then the stamp duty, the credit notes and what is left to pay. */
+export interface InvoiceTotals extends DocumentTotals {
+  /** The stamp duty ("timbre fiscal"), when the invoice has one. */
+  stampText: string | null;
+  /** The total with the stamp duty: what the invoice asks before the credit notes. Same as `totalText` when there is no stamp duty. */
+  toPayText: string;
+  /** "Total à payer" while the invoice asks for payment; "Total facturé" once it is paid or cancelled (it asks for nothing then). */
+  toPayLabel: string;
+  creditNotes: CreditNoteLine[];
+  /** What is left to pay once the credit notes are taken off; null when there is none. For a paid or cancelled invoice it is the net of the invoice. */
+  netToPayText: string | null;
+  /** "Net à payer", or "Net de la facture" once the invoice is paid or cancelled. */
+  netLabel: string;
+}
+
 export interface InvoiceDocument {
   number: string;
   title: string;
   statusWords: string;
   tone: StatusTone;
   issuedText: string | null;
-  company: { name: string | null; taxId: string | null; address: string | null; phone: string | null; email: string | null; website: string | null };
-  client: { name: string | null; address: string | null; phone: string | null; email: string | null };
+  company: { name: string | null; taxId: string | null; registre: string | null; address: string | null; phone: string | null; email: string | null; website: string | null; rib: string | null };
+  client: { name: string | null; address: string | null; phone: string | null; email: string | null; taxId: string | null };
   /** What the invoice is for. */
   service: string | null;
   address: string | null;
   lines: DocumentLine[];
-  totals: DocumentTotals;
+  totals: InvoiceTotals;
+  /** The legal lines of the company, printed at the foot of the invoice. */
+  legalMentions: string | null;
+  paymentTerms: string | null;
   notes: string | null;
   /** The PDF when the invoice has one the page can link to; else the page prints the invoice itself (the browser saves it as a PDF). */
   download: InvoiceDownload;
   /** The name a saved copy should have: "facture-f-2026-0001". */
   fileName: string;
+}
+
+/** The addresses of the PDF files of a request, built from the address of the server and the private link of the request. */
+export interface GuestPdfLinks {
+  /** The drawn PDF of the invoice. */
+  invoice: string | null;
+  creditNote(creditNoteId: number): string | null;
+}
+
+const NO_PDF_LINKS: GuestPdfLinks = { invoice: null, creditNote: () => null };
+
+/**
+ * The PDF addresses of a request (P2-07): `https://server/api/guest/interventions/12/invoice/pdf?token=…`, and the same for each
+ * credit note. Only a complete https address is a link (a development server on http gives none, and the page prints instead).
+ */
+export function guestPdfLinks(apiBase: string | null | undefined, id: number | string | null | undefined, token: string | null | undefined): GuestPdfLinks {
+  const base = typeof apiBase === 'string' ? apiBase.trim().replace(/\/+$/, '') : '';
+  const job = String(id ?? '').trim();
+  const secret = typeof token === 'string' ? token.trim() : '';
+
+  if (!/^[1-9]\d{0,9}$/.test(job) || secret === '' || !pdfLink(base)) return NO_PDF_LINKS;
+
+  const query = `?token=${encodeURIComponent(secret)}`;
+  const root = `${base}/guest/interventions/${job}`;
+
+  return {
+    invoice: pdfLink(`${root}/invoice/pdf${query}`),
+    creditNote: (creditNoteId) => (Number.isInteger(creditNoteId) && creditNoteId > 0 ? pdfLink(`${root}/credit-notes/${creditNoteId}/pdf${query}`) : null),
+  };
 }
 
 const text = (value: string | null | undefined): string | null => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
@@ -559,13 +628,20 @@ export function invoiceFileName(number: string): string {
   return slug ? `facture-${slug}` : 'facture';
 }
 
+/** What the page knows about where the PDF files are (the address of the server and the link of the request). */
+export interface InvoiceDocumentOptions {
+  pdf?: GuestPdfLinks | null;
+}
+
 /** The invoice as the page shows, prints and offers it; null when there is none (a draft is not the customer's, the server does not send it). */
-export function invoiceDocument(invoice: TrackingInterventionInvoice | null | undefined): InvoiceDocument | null {
+export function invoiceDocument(invoice: TrackingInterventionInvoice | null | undefined, options: InvoiceDocumentOptions = {}): InvoiceDocument | null {
   if (!invoice || invoice.status === 'DRAFT') return null;
 
+  const pdf = options.pdf ?? NO_PDF_LINKS;
   const paid = invoice.status === 'PAID' || invoice.paymentStatus === 'PAID';
   const paidDay = dayText(invoice.paidAt);
-  const link = pdfLink(invoice.pdfUrl);
+  // The PDF the server draws is the invoice as it stands; an uploaded file (an older invoice may have one) is the fallback.
+  const link = pdf.invoice ?? pdfLink(invoice.pdfUrl);
   const { statusWords, tone } =
     invoice.status === 'CANCELLED'
       ? { statusWords: 'Facture annulée', tone: 'danger' as StatusTone }
@@ -573,6 +649,24 @@ export function invoiceDocument(invoice: TrackingInterventionInvoice | null | un
         ? { statusWords: paidDay ? `Payée le ${paidDay}` : 'Payée', tone: 'success' as StatusTone }
         : { statusWords: 'À payer', tone: 'warning' as StatusTone };
   const issued = dayText(invoice.issuedAt ?? invoice.sentAt ?? invoice.createdAt);
+  const currency = invoice.currency;
+  const stamp = amountOf(invoice.stampDuty);
+  const credited = amountOf(invoice.creditedAmount);
+  const toPay = amountOf(invoice.amountTTC) + stamp;
+  const notes = [...(invoice.creditNotes ?? [])].sort((a, b) => a.id - b.id);
+  const creditNotes: CreditNoteLine[] = notes.map((note) => {
+    const day = dayText(note.issuedAt ?? note.createdAt);
+
+    return {
+      id: note.id,
+      number: note.creditNoteNumber,
+      issuedText: day ? `Émis le ${day}` : null,
+      reason: text(note.reason),
+      // A real minus sign (U+2212): a screen reader says "moins" for it, and drops a hyphen.
+      amountText: `\u2212 ${moneyText(toDinars(amountOf(note.amountTTC) + amountOf(note.stampDuty)), currency)}`,
+      href: pdf.creditNote(note.id),
+    };
+  });
 
   return {
     number: invoice.invoiceNumber,
@@ -583,16 +677,28 @@ export function invoiceDocument(invoice: TrackingInterventionInvoice | null | un
     company: {
       name: text(invoice.companyName),
       taxId: text(invoice.companyTaxId),
+      registre: text(invoice.companyRegistre),
       address: text(invoice.companyAddress),
       phone: text(invoice.companyPhone),
       email: text(invoice.companyEmail),
       website: text(invoice.companyWebsite),
+      rib: text(invoice.companyRib),
     },
-    client: { name: text(invoice.clientName), address: text(invoice.clientAddress), phone: text(invoice.clientPhone), email: text(invoice.clientEmail) },
+    client: { name: text(invoice.clientName), address: text(invoice.clientAddress), phone: text(invoice.clientPhone), email: text(invoice.clientEmail), taxId: text(invoice.clientTaxId) },
     service: text(invoice.subServiceName) ?? text(invoice.interventionDescription),
     address: text(invoice.interventionAddress),
-    lines: documentLines(invoice.items, invoice.currency),
-    totals: documentTotals(invoice),
+    lines: documentLines(invoice.items, currency),
+    totals: {
+      ...documentTotals(invoice),
+      stampText: stamp > 0 ? moneyText(toDinars(stamp), currency) : null,
+      toPayText: moneyText(toDinars(toPay), currency),
+      toPayLabel: tone === 'warning' ? 'Total à payer' : 'Total facturé',
+      creditNotes,
+      netToPayText: credited > 0 || creditNotes.length > 0 ? moneyText(toDinars(Math.max(toPay - credited, 0)), currency) : null,
+      netLabel: tone === 'warning' ? 'Net à payer' : 'Net de la facture',
+    },
+    legalMentions: text(invoice.legalMentions),
+    paymentTerms: text(invoice.paymentTerms),
     notes: text(invoice.notes),
     download: link ? { kind: 'link', href: link } : { kind: 'print' },
     fileName: invoiceFileName(invoice.invoiceNumber),

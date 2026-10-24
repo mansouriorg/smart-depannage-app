@@ -191,6 +191,12 @@ export type ClientInterventionPayment = {
     companyAddress: string | null;
     companyTaxId: string | null;
     companyWebsite: string | null;
+    companyRegistre: string | null;
+    companyRib: string | null;
+    legalMentions: string | null;
+    paymentTerms: string | null;
+    stampDuty: number;
+    creditedAmount: number;
     interventionDescription: string | null;
     interventionAddress: string | null;
     serviceType: ServiceType | null;
@@ -212,6 +218,7 @@ export type ClientInterventionPayment = {
     clientEmail: string | null;
     clientPhone: string | null;
     clientAddress: string | null;
+    clientTaxId: string | null;
   } | null;
 };
 
@@ -227,6 +234,12 @@ export type ClientInterventionInvoice = {
   companyAddress: string | null;
   companyTaxId: string | null;
   companyWebsite: string | null;
+  companyRegistre: string | null;
+  companyRib: string | null;
+  legalMentions: string | null;
+  paymentTerms: string | null;
+  stampDuty: number;
+  creditedAmount: number;
   interventionDescription: string | null;
   interventionAddress: string | null;
   serviceType: ServiceType | null;
@@ -248,6 +261,7 @@ export type ClientInterventionInvoice = {
   clientEmail: string | null;
   clientPhone: string | null;
   clientAddress: string | null;
+  clientTaxId: string | null;
   items?: {
     id: number;
     label: string;
@@ -255,6 +269,21 @@ export type ClientInterventionInvoice = {
     quantity: number;
     unitPrice: number;
     total: number;
+  }[];
+  creditNotes?: {
+    id: number;
+    invoiceId: number;
+    interventionId: number;
+    creditNoteNumber: string;
+    reason: string;
+    currency: string;
+    amountHT: number;
+    taxRate: number;
+    taxAmount: number;
+    amountTTC: number;
+    stampDuty: number;
+    issuedAt: string;
+    createdAt: string;
   }[];
   payments?: {
     id: number;
@@ -671,6 +700,12 @@ export type TrackingInterventionPayment = {
     companyAddress: string | null;
     companyTaxId: string | null;
     companyWebsite: string | null;
+    companyRegistre: string | null;
+    companyRib: string | null;
+    legalMentions: string | null;
+    paymentTerms: string | null;
+    stampDuty: number;
+    creditedAmount: number;
     interventionDescription: string | null;
     interventionAddress: string | null;
     serviceType: ServiceType | null;
@@ -692,6 +727,7 @@ export type TrackingInterventionPayment = {
     clientEmail: string | null;
     clientPhone: string | null;
     clientAddress: string | null;
+    clientTaxId: string | null;
   } | null;
 };
 
@@ -707,6 +743,12 @@ export type TrackingInterventionInvoice = {
   companyAddress: string | null;
   companyTaxId: string | null;
   companyWebsite: string | null;
+  companyRegistre: string | null;
+  companyRib: string | null;
+  legalMentions: string | null;
+  paymentTerms: string | null;
+  stampDuty: number;
+  creditedAmount: number;
   interventionDescription: string | null;
   interventionAddress: string | null;
   serviceType: ServiceType | null;
@@ -728,6 +770,7 @@ export type TrackingInterventionInvoice = {
   clientEmail: string | null;
   clientPhone: string | null;
   clientAddress: string | null;
+  clientTaxId: string | null;
   items?: {
     id: number;
     label: string;
@@ -735,6 +778,21 @@ export type TrackingInterventionInvoice = {
     quantity: number;
     unitPrice: number;
     total: number;
+  }[];
+  creditNotes?: {
+    id: number;
+    invoiceId: number;
+    interventionId: number;
+    creditNoteNumber: string;
+    reason: string;
+    currency: string;
+    amountHT: number;
+    taxRate: number;
+    taxAmount: number;
+    amountTTC: number;
+    stampDuty: number;
+    issuedAt: string;
+    createdAt: string;
   }[];
   payments?: {
     id: number;
@@ -1078,6 +1136,12 @@ export type ArtisanInterventionPayment = {
     companyAddress: string | null;
     companyTaxId: string | null;
     companyWebsite: string | null;
+    companyRegistre: string | null;
+    companyRib: string | null;
+    legalMentions: string | null;
+    paymentTerms: string | null;
+    stampDuty: number;
+    creditedAmount: number;
     interventionDescription: string | null;
     interventionAddress: string | null;
     serviceType: ServiceType | null;
@@ -1087,7 +1151,6 @@ export type ArtisanInterventionPayment = {
     taxRate: number;
     taxAmount: number;
     amountTTC: number;
-    pdfUrl: string | null;
     notes: string | null;
     issuedAt: string | null;
     sentAt: string | null;
@@ -1096,6 +1159,37 @@ export type ArtisanInterventionPayment = {
     createdAt: string;
     updatedAt: string;
   } | null;
+};
+
+export type ArtisanInterventionMessage = {
+  id: number;
+  interventionId: number;
+  senderId: number;
+  audience: MessageAudience;
+  content: string | null;
+  attachments: string[];
+  isRead: boolean;
+  readAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sender?: {
+    id: number;
+    name?: string | null;
+    role?: Role;
+  };
+};
+
+export type ArtisanInterventionReview = {
+  id: number;
+  interventionId: number;
+  rating: number;
+  comment: string | null;
+  isOnTime: boolean | null;
+  isWorkClean: boolean | null;
+  isPriceRespected: boolean | null;
+  wouldRecommend: boolean | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ArtisanInterventionInvoice = {
@@ -1110,6 +1204,12 @@ export type ArtisanInterventionInvoice = {
   companyAddress: string | null;
   companyTaxId: string | null;
   companyWebsite: string | null;
+  companyRegistre: string | null;
+  companyRib: string | null;
+  legalMentions: string | null;
+  paymentTerms: string | null;
+  stampDuty: number;
+  creditedAmount: number;
   interventionDescription: string | null;
   interventionAddress: string | null;
   serviceType: ServiceType | null;
@@ -1119,7 +1219,6 @@ export type ArtisanInterventionInvoice = {
   taxRate: number;
   taxAmount: number;
   amountTTC: number;
-  pdfUrl: string | null;
   notes: string | null;
   issuedAt: string | null;
   sentAt: string | null;
@@ -1134,6 +1233,20 @@ export type ArtisanInterventionInvoice = {
     quantity: number;
     unitPrice: number;
     total: number;
+  }[];
+  creditNotes?: {
+    id: number;
+    invoiceId: number;
+    interventionId: number;
+    creditNoteNumber: string;
+    currency: string;
+    amountHT: number;
+    taxRate: number;
+    taxAmount: number;
+    amountTTC: number;
+    stampDuty: number;
+    issuedAt: string;
+    createdAt: string;
   }[];
   payments?: {
     id: number;
@@ -1215,37 +1328,6 @@ export type ArtisanInterventionInvoice = {
   };
 };
 
-export type ArtisanInterventionMessage = {
-  id: number;
-  interventionId: number;
-  senderId: number;
-  audience: MessageAudience;
-  content: string | null;
-  attachments: string[];
-  isRead: boolean;
-  readAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  sender?: {
-    id: number;
-    name?: string | null;
-    role?: Role;
-  };
-};
-
-export type ArtisanInterventionReview = {
-  id: number;
-  interventionId: number;
-  rating: number;
-  comment: string | null;
-  isOnTime: boolean | null;
-  isWorkClean: boolean | null;
-  isPriceRespected: boolean | null;
-  wouldRecommend: boolean | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 /** A job as the artisan who has it receives it. */
 export type ArtisanIntervention = {
   id: number;
@@ -1315,11 +1397,11 @@ export type ArtisanIntervention = {
   events?: ArtisanInterventionEvent[];
   quotes?: ArtisanInterventionQuote[];
   payments?: ArtisanInterventionPayment[];
-  invoice?: ArtisanInterventionInvoice | null;
   messages?: ArtisanInterventionMessage[];
   review?: ArtisanInterventionReview | null;
   createdAt: string;
   updatedAt: string;
+  invoice?: ArtisanInterventionInvoice | null;
 };
 
 export type BoardInterventionClient = {
