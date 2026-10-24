@@ -57,6 +57,7 @@ export type ClientInterventionQuote = {
   clientNote: string | null;
   pdfUrl: string | null;
   expiresAt: string | null;
+  revision: number;
   sentAt: string | null;
   acceptedAt: string | null;
   rejectedAt: string | null;
@@ -169,6 +170,7 @@ export type ClientInterventionPayment = {
     clientNote: string | null;
     pdfUrl: string | null;
     expiresAt: string | null;
+    revision: number;
     sentAt: string | null;
     acceptedAt: string | null;
     rejectedAt: string | null;
@@ -535,6 +537,7 @@ export type TrackingInterventionQuote = {
   clientNote: string | null;
   pdfUrl: string | null;
   expiresAt: string | null;
+  revision: number;
   sentAt: string | null;
   acceptedAt: string | null;
   rejectedAt: string | null;
@@ -647,6 +650,7 @@ export type TrackingInterventionPayment = {
     clientNote: string | null;
     pdfUrl: string | null;
     expiresAt: string | null;
+    revision: number;
     sentAt: string | null;
     acceptedAt: string | null;
     rejectedAt: string | null;
@@ -944,6 +948,7 @@ export type ArtisanInterventionQuote = {
   clientNote: string | null;
   pdfUrl: string | null;
   expiresAt: string | null;
+  revision: number;
   sentAt: string | null;
   acceptedAt: string | null;
   rejectedAt: string | null;
@@ -1052,6 +1057,7 @@ export type ArtisanInterventionPayment = {
     clientNote: string | null;
     pdfUrl: string | null;
     expiresAt: string | null;
+    revision: number;
     sentAt: string | null;
     acceptedAt: string | null;
     rejectedAt: string | null;
@@ -1346,6 +1352,7 @@ export type BoardInterventionQuote = {
   clientNote: string | null;
   pdfUrl: string | null;
   expiresAt: string | null;
+  revision: number;
   sentAt: string | null;
   acceptedAt: string | null;
   rejectedAt: string | null;
