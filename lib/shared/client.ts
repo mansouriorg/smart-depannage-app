@@ -2,9 +2,10 @@ import type { OffsetPaginated, Paginated } from './generated/envelope';
 import type { DispatchSort, DispatchViewId } from './generated/intervention-status';
 import type { ArtisanAvailabilityAnswer, ArtisanSelf, MissionRefusalAnswer } from './artisan';
 import type { MissionRejectionReason } from './generated/enums';
-import type { ArtisanIntervention, ArtisanInterventionQuote, BoardIntervention, ClientIntervention, TrackingIntervention } from './generated/views';
+import type { ArtisanIntervention, ArtisanInterventionQuote, BoardIntervention, ClientIntervention, TrackingIntervention, TrackingInterventionQuote } from './generated/views';
 import type { CashPosition, CollectCashAnswer, CollectCashBody, LedgerPage, LedgerQuery } from './cash';
 import type { QuoteBody } from './quote-builder';
+import type { GuestPaymentAnswer, GuestPaymentBody, GuestQuoteBody, PaymentOptions } from './customer';
 import type { BotChallenge } from './bot-check';
 import type {
   GuestCreated,
@@ -144,6 +145,28 @@ export const routes = {
     /** Adds pictures to an open request: `body` is a FormData with up to 5 files in the field `photos`. */
     photos: (id: number | string, token: string, body: unknown) =>
       route<GuestPhotosAnswer>('post', `/guest/interventions/${id}/photos`, { params: { token }, body }),
+    /** The quotes that were sent (never a draft), with their lines. */
+    quotes: (id: number | string, token: string) => route<TrackingInterventionQuote[]>('get', `/guest/interventions/${id}/quotes`, { params: { token } }),
+    /** Accepts a quote. `revision` is the one that was read: a quote edited since is a 409. A quote that lapsed or is being changed is a 400. */
+    acceptQuote: (id: number | string, quoteId: number | string, token: string, body: GuestQuoteBody) =>
+      route<TrackingInterventionQuote>('post', `/guest/interventions/${id}/quotes/${quoteId}/accept`, { params: { token }, body }),
+    /** Refuses a quote. */
+    rejectQuote: (id: number | string, quoteId: number | string, token: string, body: GuestQuoteBody) =>
+      route<TrackingInterventionQuote>('post', `/guest/interventions/${id}/quotes/${quoteId}/reject`, { params: { token }, body }),
+    /** Sends a quote back for a change: the technician edits it and sends it again, and it cannot be accepted until then. */
+    requestChange: (id: number | string, quoteId: number | string, token: string, body: GuestQuoteBody) =>
+      route<TrackingInterventionQuote>('post', `/guest/interventions/${id}/quotes/${quoteId}/request-modification`, { params: { token }, body }),
+    /** Asks a question about a quote: the quote stays as it is and can still be accepted. */
+    askQuestion: (id: number | string, quoteId: number | string, token: string, body: GuestQuoteBody) =>
+      route<TrackingInterventionQuote>('post', `/guest/interventions/${id}/quotes/${quoteId}/question`, { params: { token }, body }),
+    /** How to pay: the ways the company offers, what is left to pay, the account of a transfer, the payment that waits (P2-06). */
+    paymentOptions: (id: number | string, token: string) => route<PaymentOptions>('get', `/guest/interventions/${id}/payment-options`, { params: { token } }),
+    /**
+     * Asks to pay in one way. The same request again returns the payment that waits (`replayed`); another way while one waits is a
+     * 409. A transfer's reference is sent with the same request once the transfer is made.
+     */
+    pay: (id: number | string, token: string, body: GuestPaymentBody) =>
+      route<GuestPaymentAnswer>('post', `/guest/interventions/${id}/payments`, { params: { token }, body }),
     /** The customer's opinion on a finished job. It is kept as a review that waits for the team; a second one is a 409. */
     feedback: (id: number | string, token: string, body: GuestFeedbackBody) =>
       route<TrackingIntervention>('post', `/guest/interventions/${id}/feedback`, { params: { token }, body }),
