@@ -15,3 +15,4 @@ export * from './money';
 export * from './quote-builder';
 export * from './cash';
 export * from './customer';
+export * from './finance';

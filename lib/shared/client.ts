@@ -4,6 +4,24 @@ import type { ArtisanAvailabilityAnswer, ArtisanSelf, MissionRefusalAnswer } fro
 import type { MissionRejectionReason } from './generated/enums';
 import type { ArtisanIntervention, ArtisanInterventionQuote, BoardIntervention, ClientIntervention, TrackingIntervention, TrackingInterventionQuote } from './generated/views';
 import type { CashPosition, CollectCashAnswer, CollectCashBody, LedgerPage, LedgerQuery } from './cash';
+import { financeParams } from './finance';
+import type {
+  ArtisanBalance,
+  ArtisanLedger,
+  FinanceInvoicesQuery,
+  FinancePage,
+  FinancePaymentsExportQuery,
+  FinancePaymentsQuery,
+  FinancePeriodQuery,
+  FinanceSummary,
+  InvoiceRow,
+  PayoutPeriodQuery,
+  PayoutPreview,
+  PayoutRow,
+  PaymentRow,
+  RefundsDue,
+  RemittanceBody,
+} from './finance';
 import type { QuoteBody } from './quote-builder';
 import type { GuestPaymentAnswer, GuestPaymentBody, GuestQuoteBody, PaymentOptions } from './customer';
 import type { BotChallenge } from './bot-check';
@@ -246,6 +264,41 @@ export const routes = {
      */
     assign: <Row>(interventionId: number | string, artisanId: number | string, body: { adminNote?: string; expectedArtisanId?: number | null } = {}) =>
       route<Row>('post', `/matching/admin/interventions/${interventionId}/assign/${artisanId}`, { body }),
+  },
+  finance: {
+    /** The totals of a period (the last seven days when none is named), and what waits whatever the period (P2-08). */
+    summary: (query: FinancePeriodQuery = {}) => route<FinanceSummary>('get', '/finance/summary', { params: financeParams(query) }),
+    /** Payments: the ones waiting for the team, the money received, the money given back. */
+    payments: (query: FinancePaymentsQuery = {}) => route<FinancePage<PaymentRow>>('get', '/finance/payments', { params: financeParams(query) }),
+    /** The CSV of the same filters (a file: the screen downloads it with the token, `callApi` does not read files). */
+    exportPayments: (query: FinancePaymentsExportQuery = {}) => route<string>('get', '/finance/payments/export', { params: financeParams(query) }),
+    /** Invoices with their credit notes and what is left to pay. */
+    invoices: (query: FinanceInvoicesQuery = {}) => route<FinancePage<InvoiceRow>>('get', '/finance/invoices', { params: financeParams(query) }),
+    /** The jobs where a credit note leaves money to give back. */
+    refundsDue: () => route<RefundsDue>('get', '/finance/refunds-due'),
+    /** Every artisan who holds cash or owes commission, those who owe the most first. */
+    balances: () => route<ArtisanBalance[]>('get', '/cash-ledger/balances'),
+    /** One artisan's ledger: the figures and a page of lines. */
+    artisanLedger: (artisanId: number | string, query: { limit?: number; before?: number } = {}) =>
+      route<ArtisanLedger>('get', `/cash-ledger/artisans/${artisanId}`, { params: financeParams(query) }),
+    /** The artisan hands commission over to the platform. */
+    remit: <Answer>(artisanId: number | string, body: RemittanceBody) => route<Answer>('post', `/cash-ledger/artisans/${artisanId}/remittances`, { body }),
+    /** Confirms that the money arrived (a transfer, or the cash an artisan took). */
+    confirmPayment: <Answer>(id: number | string, body: { reference?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/confirm`, { body }),
+    failPayment: <Answer>(id: number | string, body: { reason?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/fail`, { body }),
+    cancelPayment: <Answer>(id: number | string, body: { reason?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/cancel`, { body }),
+    /** Gives money back: no amount refunds what is left of the payment. */
+    refundPayment: <Answer>(id: number | string, body: { amount?: number; reason?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/refund`, { body }),
+    /** A credit note on an invoice: the reason the customer reads, and the amount with VAT (all that is left when none is sent). */
+    creditNote: <Answer>(invoiceId: number | string, body: { reason: string; amountTTC?: number }) => route<Answer>('post', `/invoices/${invoiceId}/credit-notes`, { body }),
+    /** The PDF of an invoice, and of a credit note (files: the screen downloads them with the token, `callApi` does not read files). */
+    invoicePdf: (invoiceId: number | string) => route<string>('get', `/invoices/${invoiceId}/pdf`),
+    creditNotePdf: (creditNoteId: number | string) => route<string>('get', `/invoices/credit-notes/${creditNoteId}/pdf`),
+    payouts: () => route<PayoutRow[]>('get', '/business/payouts'),
+    payoutPreview: (query: PayoutPeriodQuery) => route<PayoutPreview>('get', '/business/payouts/preview', { params: { ...query } }),
+    createPayout: (body: PayoutPeriodQuery & { notes?: string }) => route<PayoutRow>('post', '/business/payouts', { body }),
+    markPayoutPaid: (id: number | string, body: { paymentReference?: string; paidAt?: string } = {}) => route<PayoutRow>('patch', `/business/payouts/${id}/paid`, { body }),
+    cancelPayout: (id: number | string) => route<PayoutRow>('patch', `/business/payouts/${id}/cancel`),
   },
   users: {
     /** A page of artisans: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
