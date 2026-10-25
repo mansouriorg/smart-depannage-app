@@ -104,6 +104,8 @@ export interface FinancePaymentsQuery extends FinancePageQuery {
   view?: PaymentView;
   status?: string;
   method?: string;
+  /** Only the payments of this job (the complaint screen links to them), whatever their date. */
+  interventionId?: number;
   sort?: 'newest' | 'oldest';
 }
 
@@ -117,6 +119,7 @@ export interface FinancePaymentsExportQuery extends FinancePeriodQuery {
   view?: PaymentView;
   status?: string;
   method?: string;
+  interventionId?: number;
   search?: string;
 }
 
@@ -249,6 +252,11 @@ export interface RefundDueRow {
   kept: number;
   owed: number;
   due: number;
+  /** The complaints whose refund was accepted and has not all gone back (P2-09): what was accepted, what is left, and when it was decided. */
+  complaints: Array<{ id: number; title: string; accepted: number; remaining: number; decidedAt: string | null }>;
+  /** What the credit notes leave to give back, and what the accepted complaints leave: `due` is the larger of the two, never their sum. */
+  fromCreditNotes: number;
+  fromComplaints: number;
   payments: RefundablePayment[];
   since: string | null;
 }

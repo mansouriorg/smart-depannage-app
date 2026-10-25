@@ -22,6 +22,11 @@ import type {
   RefundsDue,
   RemittanceBody,
 } from './finance';
+import { complaintParams } from './complaints';
+import type { ComplaintCase, ComplaintPage, ComplaintQuery } from './complaints';
+import { reviewParams } from './reviews';
+import type { ReviewPage, ReviewQuery, ReviewRow, ReviewStatus } from './reviews';
+import type { CompanyBody, CompanySettings } from './company';
 import type { QuoteBody } from './quote-builder';
 import type { GuestPaymentAnswer, GuestPaymentBody, GuestQuoteBody, PaymentOptions } from './customer';
 import type { BotChallenge } from './bot-check';
@@ -300,7 +305,39 @@ export const routes = {
     markPayoutPaid: (id: number | string, body: { paymentReference?: string; paidAt?: string } = {}) => route<PayoutRow>('patch', `/business/payouts/${id}/paid`, { body }),
     cancelPayout: (id: number | string) => route<PayoutRow>('patch', `/business/payouts/${id}/cancel`),
   },
+  complaints: {
+    /** A page of complaints with the size of each view (P2-09): `view`, `status`, `mine`, `search`, `sort`, paged by page and limit. */
+    list: (query: ComplaintQuery = {}) => route<ComplaintPage>('get', '/admin/complaints', { params: complaintParams(query) }),
+    /** One complaint: the people, the job, the thread, the journal and the money of the job. */
+    one: (id: number | string) => route<ComplaintCase>('get', `/admin/complaints/${id}`),
+    /** Gives the complaint to an agent of the team; it passes to "en cours". The agent is told. */
+    assign: <Answer>(id: number | string, body: { assignedToId: number }) => route<Answer>('patch', `/complaints/admin/${id}/assign`, { body }),
+    /** Moves the status; the person who filed the complaint is told of the new status (not of the note). */
+    setStatus: <Answer>(id: number | string, body: { status: string; note?: string }) => route<Answer>('patch', `/complaints/admin/${id}/status`, { body }),
+    /** Closes the complaint as resolved, with the explanation the customer reads. */
+    resolve: <Answer>(id: number | string, body: { resolutionNotes: string }) => route<Answer>('patch', `/complaints/admin/${id}/resolve`, { body }),
+    /** Writes in the thread: to the person who filed the complaint (they are told), or internal (the team alone reads it). */
+    reply: <Answer>(id: number | string, body: { content: string; isInternal?: boolean }) => route<Answer>('post', `/complaints/${id}/messages`, { body }),
+    /** A line of the journal of the complaint. */
+    note: <Answer>(id: number | string, body: { content: string }) => route<Answer>('post', `/admin/complaints/${id}/internal-notes`, { body }),
+    /** Accepts (with the amount) or refuses the refund the customer asked for. Accepting does not move money: finance pays it. */
+    decideRefund: <Answer>(id: number | string, body: { approved: boolean; amount?: number; note?: string }) => route<Answer>('patch', `/admin/complaints/${id}/refund`, { body }),
+  },
+  reviews: {
+    /** A page of the moderation queue (P2-09), with the size of each tab: paged by skip and take. */
+    queue: (query: ReviewQuery = {}) => route<ReviewPage>('get', '/reviews/admin', { params: reviewParams(query) }),
+    /** Publishes, refuses or hides a review. Refusing and hiding need a reason. */
+    moderate: (id: number | string, body: { status: ReviewStatus; moderationReason?: string }) => route<ReviewRow>('patch', `/reviews/admin/${id}/moderate`, { body }),
+  },
+  company: {
+    /** The identity of the company, as the invoices print it, with its VAT rates and the accountant's confirmation (P2-09). */
+    get: () => route<CompanySettings>('get', '/admin/settings/company'),
+    /** Saves what changed. Changing what an invoice prints takes the confirmation away unless it is given again. */
+    save: (body: CompanyBody) => route<CompanySettings>('patch', '/admin/settings/company', { body }),
+  },
   users: {
+    /** The agents of the team a complaint can be given to (support and administrators; the screen asks for one role at a time). */
+    team: <Row>(role: string) => route<{ data: Row[] }>('get', '/users', { params: { role, limit: 100 } }),
     /** A page of artisans: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
     artisans: <Row>(query: ArtisanListQuery = {}) => route<Paginated<Row>>('get', '/users/artisans', { params: { ...query } }),
   },

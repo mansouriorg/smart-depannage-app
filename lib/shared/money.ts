@@ -89,7 +89,8 @@ export function readAmount(text: unknown, maxDinars: number = MAX_UNIT_PRICE): A
 
   const millimes = Number(parts.whole) * MILLIMES_PER_DINAR + Number(parts.fraction.padEnd(3, '0'));
 
-  return millimes > maxDinars * MILLIMES_PER_DINAR ? { ok: false, problem: 'too-big' } : { ok: true, millimes };
+  // The limit is rounded to whole millimes first: 16.15 * 1000 is 16149.999999999998, which would refuse an amount of exactly 16,150.
+  return millimes > Math.round(maxDinars * MILLIMES_PER_DINAR) ? { ok: false, problem: 'too-big' } : { ok: true, millimes };
 }
 
 /** A quantity as typed ("2", "1,5", "0.25"): more than 0, with at most two decimals, read as hundredths. */

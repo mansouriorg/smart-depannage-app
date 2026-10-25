@@ -16,3 +16,6 @@ export * from './quote-builder';
 export * from './cash';
 export * from './customer';
 export * from './finance';
+export * from './complaints';
+export * from './reviews';
+export * from './company';
