@@ -338,6 +338,28 @@ export function transferDetails(options: Pick<PaymentOptions, 'bank'> | null | u
 
 export type PaymentStage = 'none' | 'paid' | 'choose' | 'waiting' | 'blocked';
 
+/** The two spellings of a card payment on a payment row (the choice on the page is `ONLINE_CARD`, the row says `ONLINE`). */
+const ONLINE_WAYS: readonly string[] = ['ONLINE', 'ONLINE_CARD'];
+
+/**
+ * Where a card payment is (P2-10), from the payment that waits:
+ *  - `ready`: the provider has it, the customer pays on the provider's page (`payUrl`) or has just done so;
+ *  - `unprepared`: the request was recorded and the provider did not take it (it was down): asking again starts it;
+ *  - `lapsed`: the time to pay is over and the server has not closed the request yet;
+ *  - `review`: money came and the team has to look at it before it counts (late, or another amount). The customer has nothing to do.
+ */
+export type CardPhase = 'ready' | 'unprepared' | 'lapsed' | 'review';
+
+export interface CardPayment {
+  phase: CardPhase;
+  /** The provider's page where the customer pays; only a `ready` payment has one. */
+  payUrl: string | null;
+  /** "14 h 35": when the time to pay ends, if the server said. */
+  expiresText: string | null;
+  /** The page asks the server again while it waits: the provider may settle the payment at any moment. */
+  watch: boolean;
+}
+
 /** The way the customer picked, if it can still be paid in: a way that went away since (the options were read again) is not picked any more. */
 export function pickedChoice(choices: readonly Pick<PaymentChoiceView, 'method' | 'available'>[], picked: PaymentChoice | null): PaymentChoice | null {
   return choices.some((item) => item.method === picked && item.available) ? picked : null;
@@ -361,19 +383,67 @@ export interface PaymentPanel {
   bank: TransferDetails | null;
   /** A transfer waits: the reference it was made with can be sent, or corrected. */
   canSendReference: boolean;
+  /** The payment that waits is a card payment (P2-10); null for the other ways and when none waits. */
+  card: CardPayment | null;
 }
 
 const CHOICE_WORDS: Record<PaymentChoice, { title: string; detail: string }> = {
   CASH: { title: 'Espèces', detail: 'Vous remettez la somme au technicien. Notre équipe confirme la réception.' },
   BANK_TRANSFER: { title: 'Virement bancaire', detail: 'Vous virez la somme sur le compte de l’entreprise, puis vous nous envoyez la référence du virement.' },
-  ONLINE_CARD: { title: 'Carte bancaire', detail: 'Paiement en ligne.' },
+  ONLINE_CARD: { title: 'Carte bancaire', detail: 'Vous payez sur la page sécurisée de notre prestataire de paiement. La confirmation est automatique.' },
 };
 
 export const PAYMENT_WORDS = {
   unavailable: 'Le paiement n’est pas disponible pour le moment.',
+  cardUnprepared: 'Le paiement par carte n’a pas pu être préparé. Réessayez, ou choisissez un autre mode de paiement.',
+  cardLapsed: 'Le délai pour payer par carte est dépassé. Si vous venez de payer, la confirmation arrive dans un instant ; sinon, relancez un paiement par carte.',
+  cardReview: 'Votre paiement par carte est en cours de vérification par notre équipe. Vous n’avez rien à refaire.',
+  cardGoToProvider: 'Continuer vers le paiement',
+  cardTryAgain: 'Réessayer le paiement par carte',
+  cardChecking: 'Nous vérifions votre paiement…',
 };
 
-function waitingWords(open: TrackingInterventionPayment, amountText: string): string {
+/** The provider's page is a link the customer is sent to: only an https address is one (anything else is not shown as a button). */
+export function isPayUrl(url: unknown): url is string {
+  // Not `new URL(...)`: the phone's runtime does not implement all of it. An address with a host, no space, no backslash (a browser reads it as a slash), no script. The server holds the provider's page to the same rule (isPayPage).
+  return typeof url === 'string' && url.length <= 2000 && /^https:\/\/[^\s/?#@\\]+(?:[/?#][^\s\\]*)?$/i.test(url);
+}
+
+/** The card payment that waits, as the page shows it; null when what waits is not a card payment. */
+export function cardPaymentOf(open: TrackingInterventionPayment | null | undefined, now: Date = new Date()): CardPayment | null {
+  if (!open || !ONLINE_WAYS.includes(open.method)) return null;
+
+  if (open.status === 'AWAITING_CONFIRMATION') return { phase: 'review', payUrl: null, expiresText: null, watch: false };
+  if (open.status !== 'PENDING') return null;
+
+  if (!isPayUrl(open.payUrl)) return { phase: 'unprepared', payUrl: null, expiresText: null, watch: false };
+
+  const ends = open.expiresAt ? new Date(open.expiresAt) : null;
+  const expiresText = ends && !Number.isNaN(ends.getTime()) ? hourText(open.expiresAt) : null;
+
+  if (ends && !Number.isNaN(ends.getTime()) && ends.getTime() <= now.getTime()) return { phase: 'lapsed', payUrl: null, expiresText, watch: true };
+
+  return { phase: 'ready', payUrl: open.payUrl, expiresText, watch: true };
+}
+
+/**
+ * The customer can ask again for a card payment that cannot be paid as it is: the provider never took the request, or its time is over
+ * (the server then looks at the provider one last time, closes the old request and starts a new one; a customer whose clock is
+ * ahead of the server's, who sees "over" a little early, is handed the same page back).
+ */
+export function cardCanTryAgain(card: CardPayment | null | undefined): boolean {
+  return card?.phase === 'unprepared' || card?.phase === 'lapsed';
+}
+
+function waitingWords(open: TrackingInterventionPayment, amountText: string, card: CardPayment | null): string {
+  if (card) {
+    if (card.phase === 'review') return PAYMENT_WORDS.cardReview;
+    if (card.phase === 'unprepared') return PAYMENT_WORDS.cardUnprepared;
+    if (card.phase === 'lapsed') return PAYMENT_WORDS.cardLapsed;
+
+    return `Paiement de ${amountText} par carte en attente${card.expiresText ? `, à terminer avant ${card.expiresText}` : ''}. Réglez sur la page sécurisée du prestataire ; si vous avez déjà payé, la confirmation arrive dans un instant.`;
+  }
+
   if (open.method === 'BANK_TRANSFER') {
     return open.reference
       ? `Virement de ${amountText} en attente de confirmation. Notre équipe le confirmera dès réception.`
@@ -391,7 +461,7 @@ function waitingWords(open: TrackingInterventionPayment, amountText: string): st
  * What the payment block of the page shows, from the options the server gave. `null` while there are none (they have not been read,
  * or the read failed): the block is not shown rather than shown wrong.
  */
-export function paymentPanel(options: PaymentOptions | null | undefined): PaymentPanel | null {
+export function paymentPanel(options: PaymentOptions | null | undefined, now: Date = new Date()): PaymentPanel | null {
   if (!options) return null;
 
   const open = options.open ?? null;
@@ -407,28 +477,30 @@ export function paymentPanel(options: PaymentOptions | null | undefined): Paymen
   // A payment that waits comes first: cash an artisan declared leaves nothing to pay (the job reads as paid), and is still to be confirmed.
   if (open) {
     const waitingAmount = moneyText(open.amount, open.currency);
+    const card = cardPaymentOf(open, now);
 
     return {
       stage: 'waiting',
       // What is asked is what the payment that waits is for (a transfer to make is for that amount, whatever the invoice asks now).
       amountText: waitingAmount,
-      words: waitingWords(open, waitingAmount),
+      words: waitingWords(open, waitingAmount, card),
       choices,
       open,
       bank: open.method === 'BANK_TRANSFER' ? bank : null,
       canSendReference: open.method === 'BANK_TRANSFER',
+      card,
     };
   }
 
-  if (options.document === null) return { stage: 'none', amountText: null, words: '', choices, open: null, bank: null, canSendReference: false };
+  if (options.document === null) return { stage: 'none', amountText: null, words: '', choices, open: null, bank: null, canSendReference: false, card: null };
 
   const total = amountOf(options.total);
 
   if (total > 0 && amountOf(options.received) >= total) {
-    return { stage: 'paid', amountText: moneyText(options.received, options.currency), words: `Le paiement de ${moneyText(options.received, options.currency)} est enregistré. Merci.`, choices: [], open: null, bank: null, canSendReference: false };
+    return { stage: 'paid', amountText: moneyText(options.received, options.currency), words: `Le paiement de ${moneyText(options.received, options.currency)} est enregistré. Merci.`, choices: [], open: null, bank: null, canSendReference: false, card: null };
   }
 
-  if (!options.canPay) return { stage: 'blocked', amountText, words: options.reason || PAYMENT_WORDS.unavailable, choices, open: null, bank: null, canSendReference: false };
+  if (!options.canPay) return { stage: 'blocked', amountText, words: options.reason || PAYMENT_WORDS.unavailable, choices, open: null, bank: null, canSendReference: false, card: null };
 
   return {
     stage: 'choose',
@@ -438,16 +510,17 @@ export function paymentPanel(options: PaymentOptions | null | undefined): Paymen
     open: null,
     bank,
     canSendReference: false,
+    card: null,
   };
 }
 
 /** The state of the payment block in one string: it changes when the stage, the payment that waits (its status, its reference) or the amount does, and only then. */
-export function paymentSignature(panel: Pick<PaymentPanel, 'stage' | 'open' | 'amountText'> | null | undefined): string {
+export function paymentSignature(panel: Pick<PaymentPanel, 'stage' | 'open' | 'amountText'> & { card?: CardPayment | null } | null | undefined): string {
   if (!panel) return 'none';
 
   const open = panel.open;
 
-  return [panel.stage, open ? open.id : '', open ? open.status : '', open ? (open.reference ?? '') : '', panel.amountText ?? ''].join(':');
+  return [panel.stage, open ? open.id : '', open ? open.status : '', open ? (open.reference ?? '') : '', panel.amountText ?? '', panel.card?.phase ?? ''].join(':');
 }
 
 /** The page reads the payment options once there is a quote that was accepted, or an invoice, and the request is not cancelled. */
@@ -458,6 +531,110 @@ export function wantsPaymentOptions(job: { status?: string | null; quotes?: read
 
   return Boolean(job.invoice) || (job.quotes ?? []).some((quote) => quote.status === 'ACCEPTED');
 }
+
+// ----------------------------------------------------------
+// Coming back from the provider's page (P2-10)
+// ----------------------------------------------------------
+
+/** The page of the website the provider sends the customer back to, whatever happened (the server's `RETURN_PATH`). */
+export const PAYMENT_RETURN_PATH = '/paiement/retour';
+
+/** Where the page keeps which job the customer was paying while they are at the provider (in the tab: it dies with it). */
+export const PAYMENT_RETURN_KEY = 'smart-depannage.card-payment';
+
+/** How long what the page kept is good for: longer than the time to pay, short enough that an old tab does not pick up an old job. */
+export const PAYMENT_RETURN_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+
+export interface PaymentReturnMemory {
+  id: number;
+  token: string;
+}
+
+/** What the page writes before it sends the customer to the provider. */
+export function rememberPaymentReturn(memory: PaymentReturnMemory, now: Date = new Date()): string {
+  return JSON.stringify({ id: memory.id, token: memory.token, at: now.getTime() });
+}
+
+/**
+ * What the page kept, read again when the customer is back. Anything that is not exactly that (nothing, another tab's text, an old
+ * entry, an id that is not a whole number, an empty or huge token) is nothing: the page then tells the customer to follow their
+ * request with the link they were sent.
+ */
+export function recallPaymentReturn(text: unknown, now: Date = new Date()): PaymentReturnMemory | null {
+  if (typeof text !== 'string' || text === '' || text.length > 2000) return null;
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+
+  if (parsed === null || typeof parsed !== 'object') return null;
+
+  const { id, token, at } = parsed as Record<string, unknown>;
+
+  if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) return null;
+  if (typeof token !== 'string' || token.length === 0 || token.length > 500) return null;
+  if (typeof at !== 'number' || !Number.isFinite(at) || now.getTime() - at > PAYMENT_RETURN_MAX_AGE_MS || at - now.getTime() > 60_000) return null;
+
+  return { id, token };
+}
+
+export type PaymentReturnVerdict = 'paid' | 'waiting' | 'review' | 'failed' | 'unknown';
+
+export interface PaymentReturn {
+  verdict: PaymentReturnVerdict;
+  words: string;
+  /** The page asks again in a few seconds. */
+  again: boolean;
+}
+
+export const RETURN_WORDS = {
+  paid: 'Paiement reçu. Merci !',
+  waiting: 'Votre paiement n’est pas encore confirmé. Si vous l’avez effectué, cela peut prendre un instant : cette page se met à jour toute seule. Si vous y avez renoncé, reprenez-le depuis le suivi de votre demande.',
+  failed: 'Aucun paiement par carte n’est en attente pour cette demande. Si votre carte a pourtant été débitée, ne payez pas une seconde fois : le suivi de votre demande montre ce qui est enregistré, et notre équipe vérifie. Vous pouvez aussi réessayer depuis ce suivi.',
+  unknown: 'Nous n’avons pas pu vérifier votre paiement pour le moment. Rouvrez le suivi de votre demande dans quelques instants.',
+  lost: 'Nous n’avons pas retrouvé votre demande dans ce navigateur. Si vous avez payé, votre paiement est pris en compte dès que le prestataire nous le confirme. Pour suivre votre demande, ouvrez son suivi avec le lien que nous vous avons envoyé.',
+  tooLong: 'Nous n’avons pas encore reçu la confirmation de votre banque. Si vous avez payé, elle arrivera : retrouvez-la dans le suivi de votre demande.',
+};
+
+/** What the return page says, from the options the server gave once it had asked the provider. `null`: the options could not be read. */
+export function paymentReturn(panel: PaymentPanel | null | undefined): PaymentReturn {
+  if (!panel) return { verdict: 'unknown', words: RETURN_WORDS.unknown, again: false };
+
+  if (panel.stage === 'paid') return { verdict: 'paid', words: RETURN_WORDS.paid, again: false };
+
+  if (panel.stage === 'waiting' && panel.card) {
+    if (panel.card.phase === 'review') return { verdict: 'review', words: PAYMENT_WORDS.cardReview, again: false };
+    if (panel.card.phase === 'ready' || panel.card.phase === 'lapsed') return { verdict: 'waiting', words: RETURN_WORDS.waiting, again: true };
+  }
+
+  // The payment was refused, lapsed or cancelled (nothing waits any more and nothing is paid), or what waits is not a card payment.
+  return { verdict: 'failed', words: RETURN_WORDS.failed, again: false };
+}
+
+/**
+ * How often the tracking page asks the server to ask the provider while a card payment waits. The webhook and the server's own timer
+ * settle a payment by themselves; this is a nudge for the customer who has just paid, so it is slower than the page's own pace. The page
+ * reads the options every 20 seconds and asks when 30 have passed, that is about every 40 seconds (some 90 an hour for an open tab); the
+ * server lets one address ask 360 an hour, so a second tab, the return page or a neighbour on the same mobile address still fit.
+ */
+export const CARD_CHECK_EVERY_MS = 30_000;
+
+/** Whether the page should ask the provider's side now rather than only read the options: a card payment waits and the last ask is old enough. */
+export function cardCheckDue(watching: boolean, lastCheckAt: number | null, now: number): boolean {
+  if (!watching) return false;
+  if (lastCheckAt === null) return true;
+
+  // A clock that went back asks again rather than never.
+  return now < lastCheckAt || now - lastCheckAt >= CARD_CHECK_EVERY_MS;
+}
+
+/** The most times the return page asks, and how long it waits between two (the provider usually settles within seconds). */
+export const RETURN_CHECKS_MAX = 12;
+export const RETURN_CHECK_EVERY_MS = 4000;
 
 export type ReferenceRead = { ok: true; reference: string } | { ok: false; problem: string };
 
@@ -490,11 +667,11 @@ export interface PaymentLine {
   dateText: string | null;
 }
 
-const ONLINE_WAYS: readonly string[] = ['ONLINE', 'ONLINE_CARD'];
-
 /** How a payment is told: by its status, except that a request for cash or a transfer that is still "pending" waits for the team like the others. */
-function paymentStatusOf(payment: Pick<TrackingInterventionPayment, 'status' | 'method'>): { words: string; tone: StatusTone } | undefined {
+function paymentStatusOf(payment: Pick<TrackingInterventionPayment, 'status' | 'method'> & { payUrl?: string | null }): { words: string; tone: StatusTone } | undefined {
   if (payment.status === 'PENDING' && !ONLINE_WAYS.includes(payment.method)) return PAYMENT_STATUS_WORDS.AWAITING_CONFIRMATION;
+  // A card payment the provider has taken waits for the customer's payment; one it never took is not a payment.
+  if (payment.status === 'PENDING' && isPayUrl(payment.payUrl)) return { words: 'En attente de paiement', tone: 'warning' };
 
   return PAYMENT_STATUS_WORDS[payment.status];
 }

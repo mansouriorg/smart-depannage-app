@@ -98,6 +98,8 @@ export type ClientInterventionPayment = {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  payUrl: string | null;
+  expiresAt: string | null;
   intervention?: {
     id: number;
     description: string;
@@ -308,6 +310,8 @@ export type ClientInterventionInvoice = {
     cancelledAt: string | null;
     createdAt: string;
     updatedAt: string;
+    payUrl: string | null;
+    expiresAt: string | null;
   }[];
   intervention?: {
     id: number;
@@ -607,6 +611,8 @@ export type TrackingInterventionPayment = {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  payUrl: string | null;
+  expiresAt: string | null;
   intervention?: {
     id: number;
     description: string;
@@ -817,6 +823,8 @@ export type TrackingInterventionInvoice = {
     cancelledAt: string | null;
     createdAt: string;
     updatedAt: string;
+    payUrl: string | null;
+    expiresAt: string | null;
   }[];
   intervention?: {
     id: number;

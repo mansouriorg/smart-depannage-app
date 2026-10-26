@@ -1,5 +1,5 @@
 import type { LedgerPage } from './cash';
-import { amountOf, dayText, moneyText } from './customer';
+import { amountOf, dayText, hourText, moneyText } from './customer';
 import { apiErrorStatus } from './errors';
 import { readAmount } from './money';
 import type { StatusTone } from './status';
@@ -153,6 +153,10 @@ export interface PaymentRow {
   reference: string | null;
   receiptNumber: string | null;
   adminNote: string | null;
+  /** The number the card provider gave to the payment (P2-10): how it is found at the provider. Null for cash, a transfer, and a card request the provider never took. */
+  providerReference: string | null;
+  /** When the time to pay a card payment ends. */
+  expiresAt: string | null;
   /** Why it failed, was cancelled or was refunded, whichever applies. */
   reason: string | null;
   requestedAt: string | null;
@@ -480,27 +484,44 @@ export function financeParams<Query extends object>(query: Query): Record<string
 // What a row lets the team do
 // ----------------------------------------------------------
 
-export type PaymentAction = 'confirm' | 'fail' | 'cancel' | 'refund';
+export type PaymentAction = 'confirm' | 'fail' | 'cancel' | 'refund' | 'check';
 
 export const PAYMENT_ACTION_LABELS: Record<PaymentAction, string> = {
   confirm: 'Confirmer la réception',
   fail: 'Marquer échoué',
   cancel: 'Annuler',
   refund: 'Rembourser',
+  check: 'Vérifier auprès du prestataire',
 };
 
 /**
  * A payment asked for and not decided that the team can decide: one that waits for confirmation, or a cash or transfer request
- * (PENDING). An online request that is PENDING has nobody behind it (no provider is connected: it can never be paid): there is
- * nothing to confirm, and it is not in the queue of the payments to confirm (the server leaves it out of the same list).
+ * (PENDING). A card request that is PENDING is not for the team to decide: either the provider has it (the server settles it from the
+ * provider's answer) or it never reached the provider (nobody can pay it). It is not in the queue of the payments to confirm (the
+ * server leaves it out of the same list).
  */
 export function isAwaiting(payment: Pick<PaymentRow, 'status'> & { method?: string | null }): boolean {
   return payment.status === 'AWAITING_CONFIRMATION' || (payment.status === 'PENDING' && isManualMethod(payment.method));
 }
 
-/** An online request that nobody can pay: the team can only clear it. */
-export function isPlaceholder(payment: Pick<PaymentRow, 'status'> & { method?: string | null }): boolean {
-  return payment.status === 'PENDING' && !isManualMethod(payment.method);
+type Carded = Pick<PaymentRow, 'status'> & { method?: string | null; providerReference?: string | null };
+
+/** A card payment the provider has: it has a number there. */
+export function isAtProvider(payment: Pick<PaymentRow, 'status'> & { method?: string | null; providerReference?: string | null }): boolean {
+  return !isManualMethod(payment.method) && typeof payment.providerReference === 'string' && payment.providerReference !== '';
+}
+
+/**
+ * A card payment that holds money the system did not count by itself (it came late, or not as asked, or the job was cancelled): the
+ * provider has the customer's money, and the team decides. Only a card payment can be in this state at the provider.
+ */
+export function isMoneyAtProvider(payment: Carded): boolean {
+  return payment.status === 'AWAITING_CONFIRMATION' && isAtProvider(payment);
+}
+
+/** A card request that nobody can pay because the provider never took it: the team can only clear it (the server's timer clears it too). */
+export function isPlaceholder(payment: Carded): boolean {
+  return payment.status === 'PENDING' && !isManualMethod(payment.method) && !isAtProvider(payment);
 }
 
 /** A payment the team enters by hand: its money does not come through a provider that would say it failed. */
@@ -511,7 +532,8 @@ export function isManualMethod(method: string | null | undefined): boolean {
 /**
  * Whether a failed call may have been carried out all the same: no answer came (the network went, the request timed out) or the
  * server failed (5xx) after it may have begun. A refusal (4xx) changed nothing. A repeated refund of an amount is accepted by the
- * server up to the total of the payment, so the console does not offer to send it again before the person has looked.
+ * server up to the total of the payment, so the console does not offer to send it again before the person has looked, unless the
+ * call carries a key (P2-10): then the server answers the repeat as it answered the first call.
  */
 export function outcomeIsUnknown(error: unknown): boolean {
   const status = apiErrorStatus(error);
@@ -522,18 +544,33 @@ export function outcomeIsUnknown(error: unknown): boolean {
 /**
  * The buttons a payment row offers: decide it while it waits; give money back while some of it can still go back. A cash or
  * transfer payment marked as failed by mistake can be confirmed again (the server allows it), so that the team can put it right.
+ * A card payment at the provider can be looked at again (the provider is asked, and the payment follows its answer) and, while it
+ * waits, cancelled; one that was cancelled or refused can be looked at once more, because money may still come for it.
  */
-export function paymentActions(payment: Pick<PaymentRow, 'status' | 'refundable'> & { method?: string | null }): PaymentAction[] {
+export function paymentActions(payment: Carded & Pick<PaymentRow, 'refundable'>): PaymentAction[] {
   if (isAwaiting(payment)) return ['confirm', 'fail', 'cancel'];
   if (isPlaceholder(payment)) return ['cancel'];
+  if (isAtProvider(payment) && payment.status === 'PENDING') return ['check', 'cancel'];
+  if (isAtProvider(payment) && (payment.status === 'CANCELLED' || payment.status === 'FAILED')) return ['check'];
   if (payment.status === 'FAILED' && isManualMethod(payment.method)) return ['confirm'];
 
   return payment.refundable > 0 && (payment.status === 'PAID' || payment.status === 'PARTIALLY_REFUNDED') ? ['refund'] : [];
 }
 
 /** The sentence under a payment that waits: who is to decide it, and what the artisan said. */
-export function waitingWords(payment: Pick<PaymentRow, 'method' | 'status' | 'declared' | 'reference'>): string | null {
-  if (isPlaceholder(payment)) return 'Demande de paiement en ligne : aucun prestataire n’est branché, personne ne peut la payer. Elle peut être annulée.';
+export function waitingWords(payment: Pick<PaymentRow, 'method' | 'status' | 'declared' | 'reference'> & { providerReference?: string | null; expiresAt?: string | null }): string | null {
+  // A request of the customer is cleared by the system after a quarter of an hour; one entered by the team (an online payment to count by
+  // hand) is left to the team: it is not told which here.
+  if (isPlaceholder(payment)) return 'Demande de paiement en ligne qui n’est pas parvenue au prestataire : personne n’a pu la payer. Le système annule celle du client au bout d’un quart d’heure ; une demande saisie par l’équipe reste à annuler.';
+
+  if (isMoneyAtProvider(payment)) return CARD_MONEY_WORDS.waiting;
+
+  if (payment.status === 'PENDING' && isAtProvider(payment)) {
+    const ends = hourText(payment.expiresAt);
+
+    return `Paiement par carte en attente chez le prestataire${ends ? `, à terminer avant ${ends}` : ''}. Il est compté dès que le prestataire confirme : rien à faire.`;
+  }
+
   if (!isAwaiting(payment)) return null;
 
   const parts: string[] = [];
@@ -543,6 +580,37 @@ export function waitingWords(payment: Pick<PaymentRow, 'method' | 'status' | 'de
 
   return parts.length > 0 ? parts.join(' ') : null;
 }
+
+/** Where a payment stands after the check, in words for the person who asked (the payment as the server gives it back; the words do not say who decided it). */
+export function checkOutcomeWords(payment: { status?: string | null } | null | undefined): string {
+  switch (payment?.status) {
+    case 'PAID':
+    case 'PARTIALLY_REFUNDED':
+    case 'REFUNDED':
+      return 'Le paiement est reçu.';
+    case 'AWAITING_CONFIRMATION':
+      return 'L’argent est arrivé chez le prestataire, mais le paiement est à vérifier (voir la note) avant de le confirmer ou de rembourser.';
+    case 'FAILED':
+      return 'Le paiement est marqué comme échoué.';
+    case 'CANCELLED':
+      return 'Le paiement est annulé.';
+    case 'PENDING':
+      return 'Le prestataire répond que le paiement est encore en attente.';
+    default:
+      return 'La vérification est faite.';
+  }
+}
+
+/** What the team is told about a card payment whose money the provider holds: how to decide it, and what closing it means. */
+export const CARD_MONEY_WORDS = {
+  waiting: 'L’argent de ce paiement par carte est arrivé chez le prestataire, mais il n’a pas été compté (voir la note). Confirmez-le pour le compter ; fermez-le seulement si vous l’avez déjà rendu au client chez le prestataire.',
+  close: 'Attention : l’argent de ce paiement est chez le prestataire. Le fermer ne le rend pas au client et le paiement ne sera plus jamais compté si l’argent est revu. Fermez-le seulement si l’argent a déjà été rendu au client depuis l’espace du prestataire ; sinon, confirmez-le puis remboursez-le.',
+  refund: 'Paiement par carte : le remboursement est enregistré ici, mais il n’est pas envoyé au prestataire. L’argent doit être rendu depuis l’espace du prestataire de paiement.',
+  refunded: 'Remboursement enregistré. Il reste à rendre l’argent au client depuis l’espace du prestataire de paiement : rien n’a été envoyé d’ici.',
+};
+
+/** The sentence when a refund was sent again and the server answered the one it had already made: nothing more went back. */
+export const REFUND_REPLAYED_WORDS = 'Ce remboursement avait déjà été enregistré (le même envoi, répété) : rien n’a été remboursé de plus.';
 
 export type RefundRead = { ok: true; millimes: number } | { ok: false; message: string };
 

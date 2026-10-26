@@ -120,6 +120,18 @@ export function keyFor(previous: CollectAttempts | null, job: number | string, m
   return { attempts: { job: here.job, keys: { ...here.keys, [millimes]: key } }, key };
 }
 
+/**
+ * The tries once the amount that was answered is spent: its key is forgotten (the same amount again is a new decision), the keys of the
+ * other amounts that were sent and not answered are kept. Null when no key is left.
+ */
+export function spendKey(attempts: CollectAttempts, millimes: number): CollectAttempts | null {
+  const keys: Record<number, string> = { ...attempts.keys };
+
+  delete keys[millimes];
+
+  return Object.keys(keys).length > 0 ? { job: attempts.job, keys } : null;
+}
+
 // ----------------------------------------------------------
 // What the artisan types
 // ----------------------------------------------------------

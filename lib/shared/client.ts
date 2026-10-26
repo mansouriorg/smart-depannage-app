@@ -57,6 +57,8 @@ export interface RouteSpec<Response> {
   readonly url: string;
   readonly params?: Readonly<Record<string, string | number | boolean | undefined>>;
   readonly body?: unknown;
+  /** Headers this call adds (an `Idempotency-Key`, P2-10). Left out when there are none. */
+  readonly headers?: Readonly<Record<string, string>>;
   /** Never set: it only carries the type of the answer. */
   readonly response?: Response;
 }
@@ -66,19 +68,71 @@ export interface RequestConfig {
   url: string;
   params?: unknown;
   data?: unknown;
+  /** Only present when the route adds headers. */
+  headers?: Record<string, string>;
 }
 
 /** What `callApi` needs from the HTTP library: send this, give back an object with `data`. With axios: `(config) => api.request(config)`. */
 export type Send = (config: RequestConfig) => Promise<{ data: unknown }>;
 
 export async function callApi<Response>(send: Send, route: RouteSpec<Response>): Promise<Response> {
-  const answer = await send({ method: route.method, url: route.url, params: route.params, data: route.body });
+  const answer = await send({ method: route.method, url: route.url, params: route.params, data: route.body, ...(route.headers ? { headers: { ...route.headers } } : {}) });
 
   return answer.data as Response;
 }
 
-function route<Response>(method: HttpMethod, url: string, extra: Pick<RouteSpec<Response>, 'params' | 'body'> = {}): RouteSpec<Response> {
+function route<Response>(method: HttpMethod, url: string, extra: Pick<RouteSpec<Response>, 'params' | 'body' | 'headers'> = {}): RouteSpec<Response> {
   return { method, url, ...extra };
+}
+
+/** The header that makes a repeated request the same request (a double tap, a retry after a lost answer): see src/modules/payments/idempotency.ts on the server. */
+export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
+
+/** What the server accepts as a key: letters, digits and `_ . : -`, up to 100 characters. */
+export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_.:-]{1,100}$/;
+
+/**
+ * A new key for one attempt of a request. The same key is sent again when the attempt is repeated (the answer was lost, the button was
+ * tapped twice), and a new one for a new decision. Not a secret: it only tells the server "this is the same request".
+ */
+export function newIdempotencyKey(): string {
+  const random = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+
+  if (random?.randomUUID) return random.randomUUID();
+
+  return `k${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+/**
+ * How long a key is kept for a repeat of the same request. A retry after a lost answer comes within seconds; a tap a few minutes later
+ * is a new decision, and the server answers a repeated key with the payment it made, even one that has ended since (a page to pay on
+ * that is no longer good). Two minutes is longer than any retry and shorter than the time a payment takes to lapse.
+ */
+export const KEY_KEPT_MS = 2 * 60_000;
+
+/** The key of an attempt, with what it was made for. */
+export interface KeyedAttempt {
+  method: string;
+  /** What the request carried besides the way of paying (the reference of a transfer; empty when there is none). */
+  reference: string;
+  key: string;
+  at: number;
+}
+
+/**
+ * The key to send with a request. The earlier attempt's key is sent again only for the same request (the same way of paying and the
+ * same reference) and only for a short while after it began; anything else is a new decision and gets a key of its own, so that a
+ * request that carries something new (the reference of a transfer made since) is never taken for the one that was already made.
+ */
+export function attemptKey(previous: KeyedAttempt | null, method: string, reference: string, now: number, makeKey: () => string = newIdempotencyKey): KeyedAttempt {
+  if (previous && previous.method === method && previous.reference === reference && now >= previous.at && now - previous.at < KEY_KEPT_MS) return previous;
+
+  return { method, reference, key: makeKey(), at: now };
+}
+
+/** The headers of a request that carries a key; none when there is no key (or it is not one the server accepts: it would be refused with a 400). */
+function keyHeaders(key: string | undefined): Pick<RouteSpec<unknown>, 'headers'> {
+  return key && IDEMPOTENCY_KEY_PATTERN.test(key) ? { headers: { [IDEMPOTENCY_HEADER]: key } } : {};
 }
 
 /** The proofs of work, as the back office reads them (the admin dashboard defines the row). */
@@ -188,8 +242,15 @@ export const routes = {
      * Asks to pay in one way. The same request again returns the payment that waits (`replayed`); another way while one waits is a
      * 409. A transfer's reference is sent with the same request once the transfer is made.
      */
-    pay: (id: number | string, token: string, body: GuestPaymentBody) =>
-      route<GuestPaymentAnswer>('post', `/guest/interventions/${id}/payments`, { params: { token }, body }),
+    pay: (id: number | string, token: string, body: GuestPaymentBody, idempotencyKey?: string) =>
+      route<GuestPaymentAnswer>('post', `/guest/interventions/${id}/payments`, { params: { token }, body, ...keyHeaders(idempotencyKey) }),
+    /**
+     * Asks the server to ask the card provider where the payment of this job stands (the page does it when the customer comes back from
+     * the provider's page, and again while it waits), and gives the options as they are then (P2-10). Nothing the caller sends decides
+     * the answer: the provider's does.
+     */
+    checkPayment: (id: number | string, token: string) =>
+      route<PaymentOptions>('post', `/guest/interventions/${id}/payments/check`, { params: { token } }),
     /** The customer's opinion on a finished job. It is kept as a review that waits for the team; a second one is a 409. */
     feedback: (id: number | string, token: string, body: GuestFeedbackBody) =>
       route<TrackingIntervention>('post', `/guest/interventions/${id}/feedback`, { params: { token }, body }),
@@ -293,7 +354,10 @@ export const routes = {
     failPayment: <Answer>(id: number | string, body: { reason?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/fail`, { body }),
     cancelPayment: <Answer>(id: number | string, body: { reason?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/cancel`, { body }),
     /** Gives money back: no amount refunds what is left of the payment. */
-    refundPayment: <Answer>(id: number | string, body: { amount?: number; reason?: string; adminNote?: string } = {}) => route<Answer>('patch', `/payments/${id}/refund`, { body }),
+    refundPayment: <Answer>(id: number | string, body: { amount?: number; reason?: string; adminNote?: string } = {}, idempotencyKey?: string) =>
+      route<Answer>('patch', `/payments/${id}/refund`, { body, ...keyHeaders(idempotencyKey) }),
+    /** Asks the card provider where a payment stands and settles it from the answer (a payment that waits, or that went to the team to check). */
+    checkPayment: <Answer>(id: number | string) => route<Answer>('post', `/payments/${id}/check`),
     /** A credit note on an invoice: the reason the customer reads, and the amount with VAT (all that is left when none is sent). */
     creditNote: <Answer>(invoiceId: number | string, body: { reason: string; amountTTC?: number }) => route<Answer>('post', `/invoices/${invoiceId}/credit-notes`, { body }),
     /** The PDF of an invoice, and of a credit note (files: the screen downloads them with the token, `callApi` does not read files). */
