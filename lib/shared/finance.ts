@@ -258,9 +258,13 @@ export interface RefundDueRow {
   due: number;
   /** The complaints whose refund was accepted and has not all gone back (P2-09): what was accepted, what is left, and when it was decided. */
   complaints: Array<{ id: number; title: string; accepted: number; remaining: number; decidedAt: string | null }>;
-  /** What the credit notes leave to give back, and what the accepted complaints leave: `due` is the larger of the two, never their sum. */
+  /** What the credit notes leave to give back, what the accepted complaints leave, and what a cancelled job still holds: `due` is the largest of the three, never their sum. */
   fromCreditNotes: number;
   fromComplaints: number;
+  /** What a cancelled job holds that the standing invoice does not ask (P3-01); 0 when the job is not cancelled. */
+  fromCancellation: number;
+  /** When and why the job was cancelled, for a job that owes because of the cancellation (`fromCancellation` above 0); null for any other job, a cancelled one that owes nothing included. */
+  cancelled: { at: string | null; reason: string | null } | null;
   payments: RefundablePayment[];
   since: string | null;
 }
