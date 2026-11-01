@@ -13,6 +13,7 @@ import { artisan } from './artisan';
 import { push } from './push';
 import { trades } from './trades';
 import { website } from './website';
+import { legal } from './legal';
 import { app } from './app';
 
 /** Every French message, by namespace. French is what the product said before P3-04, word for word. */
@@ -32,5 +33,6 @@ export const FR = {
   push,
   trades,
   website,
+  legal,
   app,
 } as const;

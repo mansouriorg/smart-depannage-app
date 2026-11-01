@@ -13,6 +13,7 @@ import { artisan } from './artisan';
 import { push } from './push';
 import { trades } from './trades';
 import { website } from './website';
+import { legal } from './legal';
 import { app } from './app';
 import type { SameShape } from '../types';
 import type { FR } from '../fr';
@@ -34,5 +35,6 @@ export const AR: SameShape<typeof FR> = {
   push,
   trades,
   website,
+  legal,
   app,
 };

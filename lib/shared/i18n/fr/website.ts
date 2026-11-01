@@ -97,9 +97,7 @@ export const website = {
     footer: {
       tagline: 'Dépannage à domicile en Tunisie.',
       services: 'Services',
-      company: 'Entreprise',
-      about: 'À propos',
-      contact: 'Contact Pro',
+      links: 'Accès rapide',
       legal: 'Légal',
       terms: 'CGU / CGV',
       privacy: 'Confidentialité',
@@ -125,7 +123,7 @@ export const website = {
         title: 'Je ne sais pas / autre',
         detail: 'Notre équipe choisira avec vous.',
       },
-      pricesNote: 'Les prix sont indicatifs ; le devis définitif est établi après examen de votre demande.',
+      pricesNote: 'Les prix sont indicatifs ; un devis peut être établi après examen de votre demande.',
     },
     description: {
       label: 'Décrivez le problème',
@@ -139,9 +137,21 @@ export const website = {
       label: 'Adresse de l’intervention',
       placeholder: 'Ex : 12 rue de la République, La Marsa, Tunis',
     },
+    newTab: '(s’ouvre dans un nouvel onglet)',
+    notice: {
+      place: 'Tant que votre demande n’est pas confiée à un technicien, les techniciens validés par Smart-Dépannage dans le métier concerné (de votre zone, si vous joignez votre position) voient le type de problème, votre description, votre adresse, votre position si vous la joignez, et votre nom. Parmi les techniciens, seul celui à qui la demande est confiée reçoit votre téléphone, votre e-mail et vos précisions pour accéder au lieu. Vos photos sont vues par l’équipe et par ce technicien.',
+      phone: 'Votre numéro sert à vous envoyer par SMS le lien de suivi et les messages sur l’avancement, à retrouver votre profil si vous refaites une demande, et à permettre à l’équipe et au technicien de la demande de vous joindre.',
+      more: 'Lire la politique de confidentialité',
+    },
+    consent: {
+      line: 'En envoyant cette demande, vous acceptez les {terms} et vous confirmez avoir lu la {privacy}.',
+      informLine: 'En envoyant cette demande, vous êtes informé(e) de l’usage de vos données tel que le décrit la {privacy}. Cette politique et les {terms} sont encore des projets qui peuvent changer.',
+      terms: 'conditions d’utilisation et de vente',
+      privacy: 'politique de confidentialité',
+    },
     locate: {
       button: 'Utiliser ma position',
-      help: 'Facultatif : aide le technicien à trouver l’endroit. Votre position n’est envoyée qu’avec cette demande.',
+      help: 'Facultatif : aide le technicien à trouver l’endroit. Votre position n’est envoyée qu’avec cette demande ; les techniciens qui peuvent la prendre la voient.',
       attached: 'Position jointe à la demande',
       notes: {
         unsupported: 'Ce navigateur ne peut pas donner votre position. Écrivez l’adresse.',
@@ -162,7 +172,7 @@ export const website = {
     },
     phone: {
       label: 'Téléphone',
-      help: 'Le lien de suivi est envoyé par SMS à ce numéro. Un numéro avec un autre indicatif s’écrit en entier : {example}.',
+      help: 'Nous essayons d’envoyer le lien de suivi par SMS à ce numéro. Un numéro avec un autre indicatif s’écrit en entier : {example}.',
     },
     email: {
       label: 'E-mail (facultatif)',
@@ -188,7 +198,7 @@ export const website = {
     },
     done: {
       title: 'Demande n° {id} envoyée',
-      body: 'Notre équipe examine votre demande de {service}. Le lien de suivi vous est aussi envoyé par SMS au {phone}.',
+      body: 'Notre équipe examine votre demande de {service}. Nous essayons aussi de vous envoyer le lien de suivi par SMS au {phone}.',
       linkLabel: 'Votre lien de suivi',
       linkNote: 'Ce lien est la clé de votre demande : ne le partagez pas. Il est gardé sur cet appareil ; vous le retrouverez en rouvrant cette page (« {listTitle} »).',
       photosSent: '{count, plural, one{{count} photo envoyée} other{{count} photos envoyées}}.',
@@ -524,6 +534,7 @@ export const website = {
       companyDocument: 'Document de l’entreprise (facultatif)',
       insuranceDocument: 'Attestation d’assurance (facultatif)',
       documentsNote: 'Vos documents ne sont vus que par notre équipe de vérification.',
+      privacyLine: 'Vos informations sont traitées comme le décrit la {privacy}, qui peut encore changer.',
       companySummary: 'Entreprise (facultatif)',
       companyName: 'Nom de l’entreprise',
       companyNumber: 'Matricule fiscal / registre de commerce',
