@@ -35,16 +35,46 @@ const api = axios.create({
 // TOKENS (stored in the device's secure storage)
 // ==========================================================
 
+// Who wants to know that the session changed (a sign-in, a renewal, a sign-out): the queue of actions kept on the phone (P3-06) follows whose
+// session is open. A listener that fails never stops the session from changing.
+const sessionListeners = new Set<() => void>();
+
+export function onSessionChange(listener: () => void): () => void {
+  sessionListeners.add(listener);
+
+  return () => {
+    sessionListeners.delete(listener);
+  };
+}
+
+function sessionChanged() {
+  for (const listener of [...sessionListeners]) {
+    try {
+      listener();
+    } catch (error) {
+      console.error('Session listener failed:', (error as Error)?.message);
+    }
+  }
+}
+
 export const saveTokens = async (tokens: {
   accessToken: string;
   refreshToken?: string | null;
 }) => {
-  await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken);
+  try {
+    await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.accessToken);
 
-  if (tokens.refreshToken) {
-    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken);
+    if (tokens.refreshToken) {
+      await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken);
+    }
+  } finally {
+    // Even a save that failed half way changes what the phone holds (the access token may be the new one): whose session is open is asked again.
+    sessionChanged();
   }
 };
+
+/** The access token, or null when there is none. Unlike `getToken`, a keychain that cannot be read throws: "cannot read" is not "signed out". */
+export const readTokenOrThrow = async (): Promise<string | null> => SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
 
 export const getToken = async () => {
   try {
@@ -66,8 +96,13 @@ export const getRefreshToken = async () => {
 
 /** Removes BOTH tokens (logout / expired session). */
 export const removeToken = async () => {
-  await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  try {
+    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  } finally {
+    // Even a wipe that failed half way changes what the phone holds: whose session is open is asked again.
+    sessionChanged();
+  }
 };
 
 // ==========================================================

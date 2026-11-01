@@ -18,12 +18,14 @@ import {
 import { apiErrorMessage } from '../../services/api';
 import { call } from '../../services/call';
 import { positionNotice, sendPosition, switchAvailability, type AvailabilityDeps } from '../../services/availability';
+import { onQueueSettled } from '../../services/offline';
 import { createBeat, sharingStateOf, type Beat, type SharingState } from '../../services/position-beat';
 import { beginSession, isSigningOut, jobsUnderWay, reconcileWithMissions, registerSharingStopper, roadSnapshot, subscribeToRoad } from '../../services/road-state';
 import { coordinatesOnFile, coordinatesText, firstNameOf, initialsOf, shortDate, verificationNotice } from '../../services/display';
 import { useI18n } from '../../services/i18n';
 import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
 import { AvailabilityCard } from '@/components/AvailabilityCard';
+import { OfflineBanner, PendingBadge } from '@/components/OfflineBanner';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
   availabilityView,
@@ -85,9 +87,11 @@ export default function WorkerDashboard() {
   const beat = useRef<Beat | null>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [sharing, setSharing] = useState<SharingState>('on');
-  // When the newest list that was applied was asked for (a slower, older answer that comes after it is dropped), and the moment the list on the
-  // screen was asked for, to be told to the road store once that list is drawn (so that the two never disagree for a frame).
-  const appliedAskedAt = useRef(0);
+  // The number of the read whose list was applied last (a slower, older answer that comes after it is dropped; a count, not the time: a phone
+  // clock corrected backwards would drop every read), and the moment the list on the screen was asked for, to be told to the road store once that
+  // list is drawn (so that the two never disagree for a frame).
+  const askedReads = useRef(0);
+  const appliedRead = useRef(0);
   const reconcileAt = useRef<number | null>(null);
   // What the mission screen has told about the jobs (the screen above Home does not refresh the list), and whether a sign-out has begun.
   const road = useSyncExternalStore(subscribeToRoad, roadSnapshot, roadSnapshot);
@@ -176,9 +180,10 @@ export default function WorkerDashboard() {
     const epoch = profileEpoch.current;
     // What the mission screen told after this moment is newer than the list that comes back, and is kept.
     const askedAt = Date.now();
+    const asked = (askedReads.current += 1);
     const [mine, list] = await Promise.allSettled([call(routes.artisans.profile()), call(routes.interventions.assigned())]);
     // The newest answer wins: one asked for before the one already drawn (a slow network) is old, and would bring back a job that is finished.
-    const newest = askedAt >= appliedAskedAt.current;
+    const newest = asked >= appliedRead.current;
 
     if (mine.status === 'fulfilled') {
       // Only what the screens show is kept: the bank details and the documents of the answer are dropped.
@@ -191,7 +196,7 @@ export default function WorkerDashboard() {
 
     if (list.status === 'fulfilled') {
       if (newest) {
-        appliedAskedAt.current = askedAt;
+        appliedRead.current = asked;
         reconcileAt.current = askedAt;
         setMissions(list.value);
       }
@@ -217,6 +222,10 @@ export default function WorkerDashboard() {
       load();
     }, [])
   );
+
+  // An action the phone kept has left (the signal came back, or the server refused it): the list is read again, so that the job shows what the
+  // server now says, with no need to pull the list down.
+  useEffect(() => onQueueSettled(() => void load()), []);
 
   // --- 2. FUNCTIONS: the position, and the switch ---
   const deps: AvailabilityDeps = {
@@ -341,6 +350,7 @@ export default function WorkerDashboard() {
         </View>
         <StatusBadge status={mission.status} paddingVertical={5} />
       </View>
+      <PendingBadge missionId={mission.id} />
       
       <View style={styles.divider} />
 
@@ -411,6 +421,9 @@ export default function WorkerDashboard() {
             </View>
           </View>
         </View>
+
+        {/* What the phone keeps until it has a signal (P3-06) */}
+        <OfflineBanner flush />
 
         {notice ? (
           <View style={styles.noticeBox}>

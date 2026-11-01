@@ -5,6 +5,8 @@ import { useEffect, useRef } from 'react';
 import { I18nManager } from 'react-native';
 
 import { I18nProvider, useI18n } from '../services/i18n';
+// The queue of actions the phone keeps until it has a signal (P3-06) starts with the app, not with the first screen that shows it.
+import '../services/offline';
 import { configurePushDisplay } from '../services/push';
 import { missionHrefFromPush, pushGate } from '../services/push-routing';
 

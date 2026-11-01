@@ -6,6 +6,7 @@ import type { MissionRejectionReason } from './generated/enums';
 import type { ArtisanIntervention, ArtisanInterventionQuote, BoardIntervention, ClientIntervention, TrackingIntervention, TrackingInterventionQuote } from './generated/views';
 import type { CashPosition, CollectCashAnswer, CollectCashBody, LedgerPage, LedgerQuery } from './cash';
 import { financeParams } from './finance';
+import { heldHeaders } from './offline';
 import type {
   ArtisanBalance,
   ArtisanLedger,
@@ -130,6 +131,13 @@ export function attemptKey(previous: KeyedAttempt | null, method: string, refere
   if (previous && previous.method === method && previous.reference === reference && now >= previous.at && now - previous.at < KEY_KEPT_MS) return previous;
 
   return { method, reference, key: makeKey(), at: now };
+}
+
+/** The headers of a call the phone held before it could send it (P3-06): none, and no `headers` field, when it was not. */
+function heldExtra(seconds: number | undefined): Pick<RouteSpec<unknown>, 'headers'> {
+  const headers = heldHeaders(seconds ?? 0);
+
+  return headers ? { headers } : {};
 }
 
 /** The headers of a request that carries a key; none when there is no key (or it is not one the server accepts: it would be refused with a 400). */
@@ -284,9 +292,13 @@ export const routes = {
     /** Refuses a job, or hands it back after accepting it: it returns to the dispatcher's queue. */
     decline: (id: number | string, body: { reason: MissionRejectionReason; note?: string }) =>
       route<MissionRefusalAnswer>('post', `/artisans/me/missions/${id}/reject`, { body }),
-    onTheWay: (id: number | string) => route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/on-the-way`),
-    arrived: (id: number | string) => route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/arrived`),
-    start: (id: number | string) => route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/start`),
+    // `heldSeconds`: how long the phone kept this action before it could send it (P3-06); the server dates the step at the moment it was done.
+    onTheWay: (id: number | string, heldSeconds?: number) =>
+      route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/on-the-way`, heldExtra(heldSeconds)),
+    arrived: (id: number | string, heldSeconds?: number) =>
+      route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/arrived`, heldExtra(heldSeconds)),
+    start: (id: number | string, heldSeconds?: number) =>
+      route<ArtisanIntervention>('patch', `/artisans/me/missions/${id}/start`, heldExtra(heldSeconds)),
   },
   notifications: {
     /** Registers this phone for push notifications (the token moves to the signed-in person if it was another's). */

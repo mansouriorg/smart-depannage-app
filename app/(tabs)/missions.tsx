@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -17,6 +17,8 @@ import {
 import api from '../../services/api';
 // 🧩 Types and words shared with the server and the other apps (P1-09)
 import { callApi, missionBucketOf, missionBuckets, routes, serviceName, type ArtisanIntervention } from '@/lib/shared';
+import { OfflineBanner, PendingBadge } from '@/components/OfflineBanner';
+import { onQueueSettled } from '../../services/offline';
 import { StatusBadge } from '@/components/StatusBadge';
 import { shortDate } from '../../services/display';
 import { useI18n } from '../../services/i18n';
@@ -38,11 +40,23 @@ export default function MissionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // The number of the read whose list is now drawn: an answer asked for before it (a slow network, and a reload because an action left the phone
+  // in between) is old, and would bring back a job as it was. (A count, not the time: a phone clock corrected backwards would drop every read.)
+  const askedReads = useRef(0);
+  const appliedRead = useRef(0);
+
   // --- 1. Fetch Real Missions ---
   const fetchMissions = async () => {
+    const asked = (askedReads.current += 1);
+
     try {
       // The answer is typed by the server's own list of what an artisan may read: a field it no longer sends does not compile.
-      setMissions(await callApi((config) => api.request(config), routes.interventions.assigned()));
+      const list = await callApi((config) => api.request(config), routes.interventions.assigned());
+
+      if (asked >= appliedRead.current) {
+        appliedRead.current = asked;
+        setMissions(list);
+      }
     } catch (error) {
       console.error("Error fetching missions:", error);
     } finally {
@@ -56,6 +70,9 @@ export default function MissionsScreen() {
       fetchMissions();
     }, [])
   );
+
+  // An action the phone kept has left: the list is read again (see the home screen).
+  useEffect(() => onQueueSettled(() => void fetchMissions()), []);
 
   // --- 2. Filter Logic ---
   const filteredMissions = missions.filter(mission => {
@@ -79,6 +96,7 @@ export default function MissionsScreen() {
         <Text style={styles.title}>{serviceName(item.serviceType, locale)}</Text>
         <StatusBadge status={item.status} />
       </View>
+      <PendingBadge missionId={item.id} />
 
       <View style={styles.divider} />
 
@@ -171,6 +189,8 @@ export default function MissionsScreen() {
           keyExtractor={(item) => item.id.toString()}
           renderItem={renderMissionItem}
           contentContainerStyle={styles.listContent}
+          // What the phone keeps until it has a signal (P3-06): at the top of the list, so that it scrolls away and never takes the list's room.
+          ListHeaderComponent={<OfflineBanner flush />}
           refreshControl={
             <RefreshControl 
               refreshing={refreshing} 

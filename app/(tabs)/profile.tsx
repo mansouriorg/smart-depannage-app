@@ -1,13 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import api, { endSession, getRefreshToken } from '../../services/api';
 import { call } from '../../services/call';
 import { initialsOf, memberSince, ratingText, tradesText, verificationNotice } from '../../services/display';
 import { useI18n } from '../../services/i18n';
 import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
+import { offlineQueue, syncOfflineUser } from '../../services/offline';
 import { unregisterPush } from '../../services/push';
 import { runBestEffort } from '../../services/sign-out';
 import { beginSession, stopSharing } from '../../services/road-state';
@@ -84,6 +85,49 @@ export default function ProfileScreen() {
     } finally {
       setSigningOut(false);
     }
+  };
+
+  // Signing out with actions the phone has not been able to send (P3-06): they stay on the phone, for this account, and go at its next sign-in.
+  // The technician is told, because the customer and the team do not know about them until then.
+  const asking = useRef(false);
+
+  const confirmLogout = async () => {
+    if (signingOut || asking.current) return;
+
+    asking.current = true;
+
+    try {
+      // The file is read first: until then the queue says it holds nothing, and the technician would sign out without the warning.
+      await offlineQueue.start();
+      await syncOfflineUser();
+    } catch {
+      // read again below: a queue that is not read says so
+    } finally {
+      asking.current = false;
+    }
+
+    const snapshot = offlineQueue.getSnapshot();
+    const count = snapshot.entries.length;
+    // Whose session is open can be unknown too (the keychain could not be read at the start, and nothing has asked again): the list then shows
+    // nothing, although the file may hold this technician's actions.
+    const unknown = !snapshot.ready || snapshot.loadFailed || snapshot.userId === null;
+
+    if (count === 0 && !unknown) {
+      void handleLogout();
+      return;
+    }
+
+    // A list that cannot be read is told as such: it may hold actions, and they would stay on the phone without the technician knowing.
+    Alert.alert(t('app.offline.signOutTitle'), unknown && count === 0 ? t('app.offline.notRead') : t('app.offline.signOutBody', { count }), [
+      { text: t('common.actions.cancel'), style: 'cancel' },
+      {
+        text: t('app.offline.signOutConfirm'),
+        style: 'destructive',
+        onPress: () => {
+          void handleLogout();
+        },
+      },
+    ]);
   };
 
   if (loading) {
@@ -212,7 +256,7 @@ export default function ProfileScreen() {
       <LanguageSelector />
 
       {/* Logout Button */}
-      <TouchableOpacity style={[styles.logoutButton, signingOut && { opacity: 0.6 }]} onPress={handleLogout} disabled={signingOut}>
+      <TouchableOpacity style={[styles.logoutButton, signingOut && { opacity: 0.6 }]} onPress={confirmLogout} disabled={signingOut}>
         {signingOut ? <ActivityIndicator color="#ef4444" /> : <Ionicons name="log-out-outline" size={20} color="#ef4444" />}
         <Text style={styles.logoutText}>{t('app.profile.signOut')}</Text>
       </TouchableOpacity>
