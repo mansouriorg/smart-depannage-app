@@ -201,6 +201,37 @@ export const app: SameShape<typeof frApp> = {
     notePlaceholder: 'كلمة للفريق (اختياري)',
   },
 
+  // A mission offered to several technicians at once, first to accept wins (P3-07).
+  offers: {
+    title: 'مهامّ مقترحة',
+    screenTitle: 'مهمّة مقترحة',
+    left: 'المتبقّي {time}',
+    leftAccessibility: 'الوقت المتبقّي: {time}',
+    firstWins: 'أوّل فنّي يقبل المهمّة يحصل عليها.',
+    accept: 'قبول',
+    refuse: 'رفض',
+    view: 'عرض الاقتراح',
+    away: 'على بُعد {km} كم',
+    back: 'رجوع',
+    endedTitle: 'اقتراحات منتهية',
+    loadFailed: 'تعذّر تحميل المهامّ المقترحة.',
+    acceptFailed: 'تعذّر قبول المهمّة. أعد المحاولة.',
+    refuseQuestion: 'لماذا ترفض هذه المهمّة؟',
+    refuseFailed: 'تعذّر تسجيل الرفض. أعد المحاولة.',
+    refusedTitle: 'تم رفض المهمّة',
+    refusedMessage: 'تم تسجيل رفضك. سيبحث الفريق عن فنّي آخر.',
+    outcome: {
+      accepted: 'لقد قبلت هذه المهمّة.',
+      declined: 'لقد رفضت هذه المهمّة.',
+      expired: 'انتهى الوقت المتاح للردّ.',
+      taken: 'قبل فنّي آخر هذه المهمّة قبلك.',
+      assigned: 'أسند الفريق هذه المهمّة إلى فنّي آخر.',
+      cancelled: 'تم إلغاء هذه المهمّة.',
+      staff: 'سحب الفريق هذا الاقتراح.',
+      closed: 'لم تعد هذه المهمّة متاحة.',
+    },
+  },
+
   statusBadge: {
     created: 'قيد الانتظار',
     accepted: 'مقبول',

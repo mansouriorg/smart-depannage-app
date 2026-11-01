@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
@@ -18,18 +19,25 @@ import {
 import { apiErrorMessage } from '../../services/api';
 import { call } from '../../services/call';
 import { positionNotice, sendPosition, switchAvailability, type AvailabilityDeps } from '../../services/availability';
+import { acceptOffer } from '../../services/offer-actions';
+import { noteOfferAnswered } from '../../services/offer-answers';
 import { onQueueSettled } from '../../services/offline';
+import { useOffers } from '../../services/use-offers';
 import { createBeat, sharingStateOf, type Beat, type SharingState } from '../../services/position-beat';
 import { beginSession, isSigningOut, jobsUnderWay, reconcileWithMissions, registerSharingStopper, roadSnapshot, subscribeToRoad } from '../../services/road-state';
 import { coordinatesOnFile, coordinatesText, firstNameOf, initialsOf, shortDate, verificationNotice } from '../../services/display';
 import { useI18n } from '../../services/i18n';
 import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
 import { AvailabilityCard } from '@/components/AvailabilityCard';
+import { LostOfferRow, OfferCard } from '@/components/OfferCard';
 import { OfflineBanner, PendingBadge } from '@/components/OfflineBanner';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
   availabilityView,
+  endedOffersShown,
   missionBucketOf,
+  offerOfJob,
+  openOffers,
   routes,
   serviceName,
   slimProfile,
@@ -174,6 +182,93 @@ export default function WorkerDashboard() {
 
     return () => running?.stop();
   }, [shouldShare, appActive]);
+
+  // --- Missions offered to several technicians at once, first to accept wins (P3-07) ---
+  // Read while this screen is in front and the app is open; the countdown runs on the server's clock (corrected), and a withdrawal reaches the phone on the next read.
+  const focused = useIsFocused();
+  const offers = useOffers(focused && appActive);
+  const [accepting, setAccepting] = useState<number | null>(null);
+  const answering = useRef(false);
+  const focusedNow = useRef(focused);
+
+  // Written by an effect (not while drawing), and false again when the screen goes away: a screen taken off the stack does not draw once more with
+  // `focused` false, so without the cleanup the answer to an accept made before it left would still find the screen "in front".
+  useEffect(() => {
+    focusedNow.current = focused;
+
+    return () => {
+      focusedNow.current = false;
+    };
+  }, [focused]);
+
+  // A double tap opens the offer once.
+  const opening = useRef(false);
+  const openOffer = (interventionId: number) => {
+    if (opening.current) return;
+
+    opening.current = true;
+    setTimeout(() => {
+      opening.current = false;
+    }, 800);
+    router.push(`/offer/${interventionId}` as Href);
+  };
+
+  const acceptFromCard = async (interventionId: number) => {
+    // One answer at a time, even if the finger is quicker than the screen.
+    if (answering.current || isSigningOut()) return;
+
+    answering.current = true;
+    setAccepting(interventionId);
+
+    let answer: Awaited<ReturnType<typeof acceptOffer>>;
+    let after: Awaited<ReturnType<typeof offers.refresh>> | null = null;
+
+    try {
+      answer = await acceptOffer(call, interventionId, locale);
+
+      if (answer.kind !== 'failed') noteOfferAnswered(interventionId);
+      // No answer was heard (no signal, a server in trouble): the server may still have accepted. The list says so; the button stays busy until it has
+      // been read, so that a second press does not start another accept beside this one.
+      else after = await offers.refresh();
+    } finally {
+      // Released as soon as the server has answered (or the list has been read after an answer that was not heard), before anything else is waited for.
+      answering.current = false;
+      setAccepting(null);
+    }
+
+    // Only the screen in front opens the mission: a technician who went elsewhere (or signed out) meanwhile is not sent from there.
+    const toMission = () => {
+      if (focusedNow.current && !isSigningOut()) router.push(`/mission/${interventionId}`);
+    };
+
+    if (answer.kind === 'accepted') {
+      void offers.refresh();
+      toMission();
+
+      return;
+    }
+
+    if (answer.kind === 'gone') {
+      // The server says the job is no longer there: its sentence now, and the list says how the offer ended.
+      Alert.alert(t('app.offers.title'), answer.message);
+      void offers.refresh();
+
+      return;
+    }
+
+    // The list read after an answer that was not heard says whether the job is the technician's, and then no "try again" is told over it.
+    if (after && offerOfJob(after.offers, interventionId)?.state === 'accepted') {
+      void load();
+      toMission();
+
+      return;
+    }
+
+    Alert.alert(t('app.offers.title'), answer.message);
+  };
+
+  const open = openOffers(offers.offers, offers.now, offers.offset);
+  const lost = endedOffersShown(offers.offers, offers.now, offers.offset);
 
   // --- 1. FUNCTION: Fetch the artisan and the missions ---
   const load = async () => {
@@ -397,6 +492,7 @@ export default function WorkerDashboard() {
             refreshing={refreshing} 
             onRefresh={() => {
               setRefreshing(true);
+              void offers.refresh();
               load();
             }} 
             tintColor="#D4AF37" 
@@ -443,6 +539,40 @@ export default function WorkerDashboard() {
           where={where ?? placeOnFile}
           sharing={shouldShare ? sharing : null}
         />
+
+        {/* OFFERS: missions offered to this technician and to others, for a few minutes (P3-07) */}
+        {open.length > 0 ? (
+          <>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>{t('app.offers.title')}</Text>
+              <View style={styles.countBadge}><Text style={styles.countText}>{open.length}</Text></View>
+            </View>
+            <View style={[styles.missionsContainer, styles.offersContainer]}>
+              {open.map((offer) => (
+                <OfferCard
+                  key={offer.id}
+                  offer={offer}
+                  phoneNow={offers.now}
+                  offset={offers.offset}
+                  busy={accepting === offer.interventionId}
+                  onOpen={() => openOffer(offer.interventionId)}
+                  onAccept={() => void acceptFromCard(offer.interventionId)}
+                />
+              ))}
+            </View>
+          </>
+        ) : null}
+
+        {lost.length > 0 ? (
+          <View style={[styles.missionsContainer, styles.offersContainer]}>
+            <Text style={styles.sectionTitle}>{t('app.offers.endedTitle')}</Text>
+            {lost.map((offer) => (
+              <LostOfferRow key={offer.id} offer={offer} />
+            ))}
+          </View>
+        ) : null}
+
+        {offers.failed ? <Text style={styles.offersFailed}>{t('app.offers.loadFailed')}</Text> : null}
 
         {/* SECTION TITLE */}
         <View style={styles.sectionHeader}>
@@ -582,6 +712,14 @@ const styles = StyleSheet.create({
   },
   missionsContainer: {
     gap: 16,
+  },
+  offersContainer: {
+    marginBottom: 24,
+  },
+  offersFailed: {
+    color: '#94a3b8',
+    fontSize: 13,
+    marginBottom: 16,
   },
   missionItem: {
     backgroundColor: '#1e293b',

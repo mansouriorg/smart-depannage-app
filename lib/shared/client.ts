@@ -7,6 +7,7 @@ import type { ArtisanIntervention, ArtisanInterventionQuote, BoardIntervention, 
 import type { CashPosition, CollectCashAnswer, CollectCashBody, LedgerPage, LedgerQuery } from './cash';
 import { financeParams } from './finance';
 import { heldHeaders } from './offline';
+import type { MyOffers, OfferRead } from './offers';
 import type {
   ArtisanBalance,
   ArtisanLedger,
@@ -286,7 +287,12 @@ export const routes = {
      * and, once the job is theirs, its timeline and messages. (`GET /interventions/:id` has none of the quotes, the service or
      * the payments: a screen that needs them reads this route.) A job nobody holds comes back as the board's copy.
      */
-    mission: (id: number | string) => route<ArtisanIntervention | BoardIntervention>('get', `/artisans/me/missions/${id}`),
+    mission: (id: number | string) => route<(ArtisanIntervention | BoardIntervention) & { offer: OfferRead | null }>('get', `/artisans/me/missions/${id}`),
+    /**
+     * The offers made to the signed-in artisan (P3-07): the ones to answer now, then those that ended in the last day, with `now`, the server's clock,
+     * for the countdown. An open offer carries the job as the board shows it; one that ended carries only its trade.
+     */
+    offers: () => route<MyOffers>('get', '/artisans/me/offers'),
     /** Accepts a job that was given to the artisan. */
     accept: (id: number | string) => route<ArtisanIntervention>('post', `/artisans/me/missions/${id}/accept`),
     /** Refuses a job, or hands it back after accepting it: it returns to the dispatcher's queue. */

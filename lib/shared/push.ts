@@ -46,6 +46,21 @@ export function pushTargetOf(data: unknown): PushTarget | null {
   return { type, notificationId: recordIdOf(notificationId), interventionId: recordIdOf(interventionId) };
 }
 
+/** The type of the push that offers a job to several technicians at once (P3-07). */
+export const OFFER_PUSH_TYPE = 'MISSION_OFFERED';
+
+/**
+ * The address a tap on a push opens: the offer screen for a job offered to the technician (the job is not theirs until they accept, so the mission screen
+ * would send them away), the mission screen for any other push about a job, and nothing for a push about no job.
+ */
+export function pushHrefOf(data: unknown): string | null {
+  const target = pushTargetOf(data);
+
+  if (!target?.interventionId) return null;
+
+  return target.type === OFFER_PUSH_TYPE ? `/offer/${target.interventionId}` : `/mission/${target.interventionId}`;
+}
+
 /** The kind of token the Expo push service accepts (the same test as the server's). */
 export function isExpoPushToken(token: unknown): token is string {
   return typeof token === 'string' && token.length <= 512 && /^(Exponent|Expo)PushToken\[[^\]]+\]$/.test(token);

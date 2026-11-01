@@ -206,6 +206,38 @@ export const app = {
     notePlaceholder: 'Un mot pour l’équipe (facultatif)',
   },
 
+  // A mission offered to several technicians at once, first to accept wins (P3-07).
+  offers: {
+    title: 'Missions proposées',
+    screenTitle: 'Mission proposée',
+    left: 'Il reste {time}',
+    leftAccessibility: 'Temps restant : {time}',
+    firstWins: 'Le premier technicien qui accepte obtient la mission.',
+    accept: 'Accepter',
+    refuse: 'Refuser',
+    view: 'Voir la proposition',
+    away: 'à {km} km',
+    back: 'Retour',
+    endedTitle: 'Propositions terminées',
+    loadFailed: 'Les missions proposées n’ont pas pu être chargées.',
+    acceptFailed: 'La mission n’a pas pu être acceptée. Réessayez.',
+    refuseQuestion: 'Pourquoi refusez-vous cette mission ?',
+    refuseFailed: 'Le refus n’a pas pu être enregistré. Réessayez.',
+    refusedTitle: 'Mission refusée',
+    refusedMessage: 'Votre refus est enregistré. L’équipe cherchera un autre technicien.',
+    // What an offer that is over says, by how it ended.
+    outcome: {
+      accepted: 'Vous avez accepté cette mission.',
+      declined: 'Vous avez refusé cette mission.',
+      expired: 'Le temps pour répondre est écoulé.',
+      taken: 'Un autre technicien a accepté cette mission avant vous.',
+      assigned: 'L’équipe a confié cette mission à un autre technicien.',
+      cancelled: 'Cette mission a été annulée.',
+      staff: 'L’équipe a retiré cette proposition.',
+      closed: 'Cette mission n’est plus disponible.',
+    },
+  },
+
   statusBadge: {
     created: 'En Attente',
     accepted: 'Accepté',

@@ -69,6 +69,12 @@ export type DayOfWeek = (typeof DayOfWeekValues)[number];
 export const MissionRejectionReasonValues = ['NOT_AVAILABLE', 'TOO_FAR', 'OUT_OF_SPECIALTY', 'PRICE_TOO_LOW', 'OTHER'] as const;
 export type MissionRejectionReason = (typeof MissionRejectionReasonValues)[number];
 
+export const MissionOfferStatusValues = ['PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED', 'WITHDRAWN'] as const;
+export type MissionOfferStatus = (typeof MissionOfferStatusValues)[number];
+
+export const MissionOfferWithdrawalValues = ['TAKEN', 'ASSIGNED', 'CANCELLED', 'STAFF'] as const;
+export type MissionOfferWithdrawal = (typeof MissionOfferWithdrawalValues)[number];
+
 export const MissionProblemTypeValues = ['CLIENT_ABSENT', 'ACCESS_ISSUE', 'EXTRA_WORK_REQUIRED', 'SAFETY_RISK', 'MATERIAL_MISSING', 'CLIENT_DISPUTE', 'OTHER'] as const;
 export type MissionProblemType = (typeof MissionProblemTypeValues)[number];
 
@@ -87,7 +93,7 @@ export type FileAssetVisibility = (typeof FileAssetVisibilityValues)[number];
 export const StorageProviderValues = ['LOCAL', 'AWS_S3', 'CLOUDINARY', 'SUPABASE', 'GOOGLE_CLOUD'] as const;
 export type StorageProvider = (typeof StorageProviderValues)[number];
 
-export const NotificationTypeValues = ['NEW_INTERVENTION_CREATED', 'ARTISAN_ASSIGNED', 'ARTISAN_ACCEPTED_MISSION', 'ARTISAN_ON_THE_WAY', 'ARTISAN_ARRIVED', 'WORK_STARTED', 'WORK_COMPLETED', 'QUOTE_SENT', 'QUOTE_ACCEPTED', 'PAYMENT_RECEIVED', 'INVOICE_READY', 'COMPLAINT_OPENED', 'COMPLAINT_UPDATED', 'ARTISAN_APPLICATION_APPROVED', 'ARTISAN_APPLICATION_REJECTED', 'APPOINTMENT_REMINDER', 'GENERAL'] as const;
+export const NotificationTypeValues = ['NEW_INTERVENTION_CREATED', 'ARTISAN_ASSIGNED', 'ARTISAN_ACCEPTED_MISSION', 'ARTISAN_ON_THE_WAY', 'ARTISAN_ARRIVED', 'WORK_STARTED', 'WORK_COMPLETED', 'QUOTE_SENT', 'QUOTE_ACCEPTED', 'PAYMENT_RECEIVED', 'INVOICE_READY', 'COMPLAINT_OPENED', 'COMPLAINT_UPDATED', 'ARTISAN_APPLICATION_APPROVED', 'ARTISAN_APPLICATION_REJECTED', 'APPOINTMENT_REMINDER', 'MISSION_OFFERED', 'GENERAL'] as const;
 export type NotificationType = (typeof NotificationTypeValues)[number];
 
 export const NotificationChannelValues = ['IN_APP', 'EMAIL', 'SMS', 'PUSH', 'ADMIN_REAL_TIME'] as const;

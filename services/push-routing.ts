@@ -1,10 +1,11 @@
-import { pushTargetOf } from '../lib/shared';
+import { pushHrefOf } from '../lib/shared';
 
-/** The screen a push opens: the mission it is about, or nothing when it is about no mission. */
+/**
+ * The screen a push opens: the mission it is about, the offer screen for a job offered to the technician (P3-07: the job is not theirs yet, so the
+ * mission screen would send them away), or nothing when it is about no job.
+ */
 export function missionHrefFromPush(data: unknown): string | null {
-  const target = pushTargetOf(data);
-
-  return target?.interventionId ? `/mission/${target.interventionId}` : null;
+  return pushHrefOf(data);
 }
 
 /**

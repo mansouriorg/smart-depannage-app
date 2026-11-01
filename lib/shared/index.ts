@@ -16,6 +16,7 @@ export * from './guest';
 export * from './tracking';
 export * from './location';
 export * from './offline';
+export * from './offers';
 export * from './money';
 export * from './quote-builder';
 export * from './cash';
