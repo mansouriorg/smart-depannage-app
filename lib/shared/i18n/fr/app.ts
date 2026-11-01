@@ -71,6 +71,10 @@ export const app = {
     switchLabel: 'Disponibilité',
     lastPosition: 'DERNIÈRE POSITION',
     refresh: 'Actualiser ma position',
+    sharing: 'Votre position est partagée tant que vous êtes en ligne ou en mission, et que l’application est affichée à l’écran. Le client la voit quand vous êtes en route. Pendant une mission, elle est enregistrée quelques jours : l’équipe peut la consulter en cas de litige.',
+    sharingDenied: 'Votre position n’est pas envoyée : la localisation est refusée sur ce téléphone. Autorisez-la dans les réglages.',
+    sharingAsk: 'Votre position n’est pas encore envoyée. Appuyez sur « Actualiser ma position » pour autoriser la localisation.',
+    sharingFailing: 'Votre position n’a pas pu être envoyée. Vérifiez que la localisation est activée et que vous avez du réseau.',
     notice: {
       denied: 'Vous êtes en ligne, mais sans votre position les clients proches ne peuvent pas vous trouver. Autorisez la localisation dans les réglages du téléphone.',
       failed: 'Vous êtes en ligne, mais votre position n’a pas pu être envoyée. Réessayez avec « Actualiser ma position ».',

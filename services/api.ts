@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { LOCALE_HEADER } from '@/lib/shared';
 import { currentLocale } from './i18n-core';
+import { beginSession, stopSharing } from './road-state';
 
 // ✅ 1. READ URL FROM .ENV
 // This allows you to change the IP in one place (.env) without touching the code.
@@ -151,13 +152,31 @@ let redirectingToLogin = false;
 
 /** Clears the stored session and sends the user to the login screen. */
 export async function endSession() {
-  await removeToken();
+  // Before anything else: the home screen is alive behind the screens above it and would go on sending the position of a session that is over,
+  // and the jobs it was told about are those of this session (the next one must not inherit them).
+  stopSharing();
+
+  try {
+    await removeToken();
+  } catch (error) {
+    // The session was not ended (the phone could not wipe its tokens): the technician is still signed in, and the position may go out again.
+    beginSession();
+    throw error;
+  }
 
   if (redirectingToLogin) return;
 
   redirectingToLogin = true;
 
   try {
+    // The login screen replaces only the screen in front. A screen stacked above Home (the mission, the change of password) would leave Home
+    // alive behind it, and a Home that is alive goes on sending the position of a session that is over. Everything is cleared first.
+    try {
+      if (router.canDismiss()) router.dismissAll();
+    } catch {
+      // nothing stacked, or a navigator that is not ready: the replace below is still done
+    }
+
     router.replace('/(auth)/login');
   } finally {
     // allow a later session to expire again

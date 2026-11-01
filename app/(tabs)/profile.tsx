@@ -10,6 +10,7 @@ import { useI18n } from '../../services/i18n';
 import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
 import { unregisterPush } from '../../services/push';
 import { runBestEffort } from '../../services/sign-out';
+import { beginSession, stopSharing } from '../../services/road-state';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { isolateFor, routes, slimProfile, type ArtisanSelf } from '@/lib/shared';
 
@@ -51,6 +52,9 @@ export default function ProfileScreen() {
 
     setSigningOut(true);
 
+    // The home screen is alive behind this one until the session is cleared: its position stops going out now, not when the screen is gone.
+    stopSharing();
+
     try {
       // 1. While the session still works: no more pushes to this phone for this artisan, and offline, so that
       //    no mission is given to someone who will not hear about it. Best effort and quick (both at once, and
@@ -73,6 +77,10 @@ export default function ProfileScreen() {
 
       // 3. Wipe the tokens from the device and go back to the login screen.
       await endSession();
+    } catch (error) {
+      // The session was not ended (the phone could not wipe its tokens): the technician is still signed in, and the position may go out again.
+      beginSession();
+      throw error;
     } finally {
       setSigningOut(false);
     }

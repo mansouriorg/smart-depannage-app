@@ -1,10 +1,14 @@
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
-import { ActivityIndicator, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { AccessibilityInfo, ActivityIndicator, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 import { availabilityLabels, isolateFor, type AvailabilityView } from '@/lib/shared';
 import { useI18n } from '../services/i18n';
 import { spacing } from '../services/i18n-core';
+import type { SharingState } from '../services/position-beat';
+
+/** How long the sentence about the sharing must stand before a screen reader says it. */
+export const ANNOUNCE_DELAY_MS = 600;
 
 /**
  * Online or offline, for real (P1-15): the switch shows what the server says, and moves only when the server has
@@ -18,6 +22,7 @@ export function AvailabilityCard({
   onRefreshPosition,
   refreshing,
   where,
+  sharing = null,
 }: {
   /** What the server says; null while it has not been asked yet. */
   view: AvailabilityView | null;
@@ -29,10 +34,46 @@ export function AvailabilityCard({
   refreshing: boolean;
   /** Where the artisan was last put on the map: an address or coordinates. */
   where: string | null;
+  /**
+   * Whether the position goes out by itself while the app is in front (P3-05): 'on' says so; 'denied' says that it stopped because the phone
+   * refuses the location; 'ask' that it never was allowed (the button asks); 'failing' that the last tries did not go through. Nothing when
+   * the technician is offline with no job under way.
+   */
+  sharing?: SharingState | null;
 }) {
   const { t, locale } = useI18n();
   const on = view === 'online' || view === 'busy';
   const color = view === 'online' ? '#10b981' : view === 'busy' ? '#f59e0b' : '#94a3b8';
+
+  const sharingText =
+    sharing === 'denied'
+      ? t('app.availability.sharingDenied')
+      : sharing === 'ask'
+        ? t('app.availability.sharingAsk')
+        : sharing === 'failing'
+          ? t('app.availability.sharingFailing')
+          : sharing === 'on'
+            ? t('app.availability.sharing')
+            : null;
+
+  // A screen reader says the sentence when it turns into a problem: the live region of a Text is Android only, so the same words are
+  // announced here, once per change, and never for the ordinary 'on' (nor at first draw, where the sentence is simply read with the card).
+  // It waits a moment for the state to settle: the screen goes through "on" on its way to a refusal when the switch starts the sharing, and
+  // two announcements of the same sentence in a row are worse than one a moment late.
+  const lastSeen = useRef<SharingState | null>(sharing);
+  const sentence = useRef(sharingText);
+  sentence.current = sharingText;
+  useEffect(() => {
+    if (lastSeen.current === sharing) return;
+    lastSeen.current = sharing;
+    if (!sharing || sharing === 'on') return;
+
+    const timer = setTimeout(() => {
+      if (sentence.current) AccessibilityInfo.announceForAccessibility(sentence.current);
+    }, ANNOUNCE_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, [sharing]);
 
   return (
     <View style={styles.card}>
@@ -87,7 +128,10 @@ export function AvailabilityCard({
         </View>
       ) : null}
 
-      {on ? (
+      {sharingText ? <Text style={[styles.sharing, sharing !== 'on' && styles.sharingDenied]}>{sharingText}</Text> : null}
+
+      {/* Also while offline with a job under way and the permission not decided: the text above says to press this button, and the switch is not the way to ask then. */}
+      {on || sharing === 'ask' ? (
         <TouchableOpacity style={[styles.button, refreshing && { opacity: 0.7 }]} onPress={onRefreshPosition} disabled={refreshing || busy}>
           {refreshing ? (
             <ActivityIndicator color="#0f172a" />
@@ -159,6 +203,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#e2e8f0',
+  },
+  sharing: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  sharingDenied: {
+    color: '#fbbf24',
   },
   terminalBox: {
     backgroundColor: '#020617',

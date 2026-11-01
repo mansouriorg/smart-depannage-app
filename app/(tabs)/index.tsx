@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   RefreshControl,
   ScrollView,
   StatusBar,
@@ -17,6 +18,8 @@ import {
 import { apiErrorMessage } from '../../services/api';
 import { call } from '../../services/call';
 import { positionNotice, sendPosition, switchAvailability, type AvailabilityDeps } from '../../services/availability';
+import { createBeat, sharingStateOf, type Beat, type SharingState } from '../../services/position-beat';
+import { beginSession, isSigningOut, jobsUnderWay, reconcileWithMissions, registerSharingStopper, roadSnapshot, subscribeToRoad } from '../../services/road-state';
 import { coordinatesOnFile, coordinatesText, firstNameOf, initialsOf, shortDate, verificationNotice } from '../../services/display';
 import { useI18n } from '../../services/i18n';
 import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
@@ -76,14 +79,110 @@ export default function WorkerDashboard() {
 
   const view = self ? availabilityView(self) : null;
 
+  // --- The position goes out by itself while the technician is online or on a job, and the app is in front (P3-05) ---
+  // The beat lives as long as the screen: a position sent by the switch or the button is told to it, so that it does not read the GPS again at once.
+  // A technician who switched off to stop new requests is still on the way to a job: the position keeps going out until the job is over.
+  const beat = useRef<Beat | null>(null);
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
+  const [sharing, setSharing] = useState<SharingState>('on');
+  // When the newest list that was applied was asked for (a slower, older answer that comes after it is dropped), and the moment the list on the
+  // screen was asked for, to be told to the road store once that list is drawn (so that the two never disagree for a frame).
+  const appliedAskedAt = useRef(0);
+  const reconcileAt = useRef<number | null>(null);
+  // What the mission screen has told about the jobs (the screen above Home does not refresh the list), and whether a sign-out has begun.
+  const road = useSyncExternalStore(subscribeToRoad, roadSnapshot, roadSnapshot);
+  const shouldShare = !road.signingOut && (view === 'online' || view === 'busy' || jobsUnderWay(missions, road));
+  // What the senders below ask when their answer comes back, not when the button was pressed: a ref written after each drawing, and read
+  // together with `isSigningOut()` and `mounted`, which change without any drawing.
+  const wantsToShare = useRef(false);
+  const mounted = useRef(true);
+  const mayStart = () => wantsToShare.current && mounted.current && !isSigningOut();
+
+  if (beat.current === null) {
+    beat.current = createBeat({
+      call,
+      // Never asks the person: the permission is asked by the switch and the button. Without it the beat stops and the card says so:
+      // "refused" when the phone will not ask again, otherwise the button is what asks.
+      readPosition: async () => {
+        const permission = await Location.getForegroundPermissionsAsync();
+
+        if (!permission.granted) return permission.canAskAgain ? 'ask' : 'denied';
+
+        // Nobody asked for this reading: no system dialog about the settings of the phone (on Android it would come back every thirty seconds).
+        const here = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: false });
+
+        return {
+          latitude: here.coords.latitude,
+          longitude: here.coords.longitude,
+          accuracy: here.coords.accuracy,
+          speed: here.coords.speed,
+          heading: here.coords.heading,
+        };
+      },
+      now: () => Date.now(),
+      setTimer: (run, ms) => setTimeout(run, ms),
+      clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      onOutcome: (outcome, failures) => setSharing(sharingStateOf(outcome, failures)),
+    });
+  }
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => setAppActive(next === 'active'));
+
+    // The state may have changed between the first render and now, with no event to tell it.
+    setAppActive(AppState.currentState === 'active');
+
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    wantsToShare.current = shouldShare && appActive;
+  });
+
+  // A session begins with this screen (it is drawn once the sign-out of the one before has ended it), and a sign-out stops the sharing at
+  // once (the profile screen and `endSession` ask for it). Nothing is sent once this screen is gone.
+  useEffect(() => {
+    mounted.current = true;
+    beginSession();
+
+    const forget = registerSharingStopper(() => beat.current?.stop());
+
+    return () => {
+      mounted.current = false;
+      forget();
+      beat.current?.stop();
+    };
+  }, []);
+
+  // Nothing shared: the notice of the last time (a refusal, a failure) is not the one to show when it starts again.
+  useEffect(() => {
+    if (!shouldShare) setSharing('on');
+  }, [shouldShare]);
+
+  useEffect(() => {
+    if (!shouldShare || !appActive) return;
+
+    const running = beat.current;
+
+    // A new start is a new chance: what stopped it before (the permission) may have been fixed in the settings.
+    setSharing('on');
+    running?.start();
+
+    return () => running?.stop();
+  }, [shouldShare, appActive]);
+
   // --- 1. FUNCTION: Fetch the artisan and the missions ---
   const load = async () => {
     const epoch = profileEpoch.current;
+    // What the mission screen told after this moment is newer than the list that comes back, and is kept.
+    const askedAt = Date.now();
     const [mine, list] = await Promise.allSettled([call(routes.artisans.profile()), call(routes.interventions.assigned())]);
+    // The newest answer wins: one asked for before the one already drawn (a slow network) is old, and would bring back a job that is finished.
+    const newest = askedAt >= appliedAskedAt.current;
 
     if (mine.status === 'fulfilled') {
       // Only what the screens show is kept: the bank details and the documents of the answer are dropped.
-      if (epoch === profileEpoch.current) setSelf(slimProfile(mine.value));
+      if (newest && epoch === profileEpoch.current) setSelf(slimProfile(mine.value));
       setSelfFailed(false);
     } else {
       console.error("Error fetching the artisan:", mine.reason);
@@ -91,7 +190,11 @@ export default function WorkerDashboard() {
     }
 
     if (list.status === 'fulfilled') {
-      setMissions(list.value);
+      if (newest) {
+        appliedAskedAt.current = askedAt;
+        reconcileAt.current = askedAt;
+        setMissions(list.value);
+      }
     } else {
       console.error("Error fetching missions:", list.reason);
     }
@@ -99,6 +202,15 @@ export default function WorkerDashboard() {
     setMissionsLoading(false);
     setRefreshing(false);
   };
+
+  // What the mission screen told is compared with the list once the list is on the screen, not before: in the same drawing the road store and
+  // the list would otherwise disagree for a moment, and the position would start and stop for nothing.
+  useEffect(() => {
+    if (reconcileAt.current === null) return;
+
+    reconcileWithMissions(reconcileAt.current);
+    reconcileAt.current = null;
+  }, [missions]);
 
   useFocusEffect(
     useCallback(() => {
@@ -119,7 +231,12 @@ export default function WorkerDashboard() {
 
       lastRead.current = point;
 
-      return point;
+      return {
+        ...point,
+        accuracy: here.coords.accuracy,
+        speed: here.coords.speed,
+        heading: here.coords.heading,
+      };
     },
   };
 
@@ -140,7 +257,7 @@ export default function WorkerDashboard() {
   };
 
   const toggleAvailability = async () => {
-    if (working.current || !view) return;
+    if (working.current || !view || isSigningOut()) return;
 
     working.current = true;
     setSwitching(true);
@@ -155,6 +272,17 @@ export default function WorkerDashboard() {
       if (answer.availabilityStatus === 'OFFLINE') setWhere(null);
       else if (position === 'sent' && lastRead.current) void showPlace(lastRead.current);
 
+      if (position === 'sent') {
+        beat.current?.noteSent();
+
+        // The switch is what asks for the permission, as the button is: once it is given, the position goes out by itself again.
+        setSharing('on');
+        if (mayStart()) beat.current?.start();
+      } else if (position === 'denied') {
+        // The person has just refused: the card says so, instead of still asking them to press the button.
+        setSharing('denied');
+      }
+
       const notice = positionNotice(position, locale);
 
       if (notice) Alert.alert(t('app.home.positionTitle'), notice);
@@ -167,7 +295,7 @@ export default function WorkerDashboard() {
   };
 
   const refreshPosition = async () => {
-    if (working.current) return;
+    if (working.current || isSigningOut()) return;
 
     working.current = true;
     setPositionLoading(true);
@@ -176,9 +304,19 @@ export default function WorkerDashboard() {
       const outcome = await sendPosition(deps);
 
       if (outcome === 'sent') {
+        beat.current?.noteSent();
+
+        // The button is what asks for the permission: once it is given, the position goes out by itself again (a start while it runs does nothing).
+        setSharing('on');
+        if (mayStart()) beat.current?.start();
+
         if (lastRead.current) void showPlace(lastRead.current);
         Alert.alert(t('app.home.positionTitle'), t('app.home.positionUpdated'));
-      } else Alert.alert(t('app.home.positionTitle'), positionNotice(outcome, locale) ?? t('app.home.positionNotUpdated'));
+      } else {
+        if (outcome === 'denied') setSharing('denied');
+
+        Alert.alert(t('app.home.positionTitle'), positionNotice(outcome, locale) ?? t('app.home.positionNotUpdated'));
+      }
     } finally {
       working.current = false;
       setPositionLoading(false);
@@ -290,6 +428,7 @@ export default function WorkerDashboard() {
           onRefreshPosition={refreshPosition}
           refreshing={positionLoading}
           where={where ?? placeOnFile}
+          sharing={shouldShare ? sharing : null}
         />
 
         {/* SECTION TITLE */}

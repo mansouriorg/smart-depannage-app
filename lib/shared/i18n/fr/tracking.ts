@@ -78,6 +78,18 @@ export const tracking = {
     intervention: 'Intervention',
     done: 'Terminée',
   },
+  // When the technician will be there (P3-05), told while the job is on the way. Never worked out from a position that is old.
+  arrival: {
+    title: 'Arrivée estimée',
+    soon: 'Votre technicien arrive dans un instant.',
+    minutes: '{minutes, plural, one{Votre technicien arrive dans environ {minutes} minute.} other{Votre technicien arrive dans environ {minutes} minutes.}}',
+    far: 'Votre technicien arrive dans plus d’une heure.',
+    stale: 'Nous n’avons pas de position récente de votre technicien. L’heure d’arrivée reviendra dès que sa position sera mise à jour.',
+    unknown: 'La position de votre technicien n’est pas encore connue. L’heure d’arrivée apparaîtra dès qu’elle le sera.',
+    note: 'Estimation selon la distance et une vitesse moyenne : la circulation peut la changer.',
+    age: '{minutes, plural, other{Position reçue il y a {minutes} min}}',
+    justNow: 'Position reçue à l’instant',
+  },
   // What a screen reader announces when the status changes.
   notice: 'Mise à jour : {title}.',
 } as const;

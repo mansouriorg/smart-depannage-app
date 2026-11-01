@@ -81,4 +81,17 @@ export const tracking: SameShape<typeof frTracking> = {
     done: 'تم الإنجاز',
   },
   notice: 'تحديث: {title}.',
+  // When the technician will be there (P3-05), told while the job is on the way. Never worked out from a position that is old.
+  arrival: {
+    title: 'الوصول المتوقع',
+    soon: 'سيصل فنّيك بعد قليل.',
+    minutes:
+      '{minutes, plural, one{يصل فنّيك خلال نحو دقيقة.} two{يصل فنّيك خلال نحو دقيقتين.} few{يصل فنّيك خلال نحو {minutes} دقائق.} many{يصل فنّيك خلال نحو {minutes} دقيقة.} other{يصل فنّيك خلال نحو {minutes} دقيقة.}}',
+    far: 'سيصل فنّيك بعد أكثر من ساعة.',
+    stale: 'لا نملك موقعًا حديثًا لفنّيك. سيظهر وقت الوصول من جديد عندما يصلنا موقع جديد.',
+    unknown: 'موقع فنّيك غير معروف بعد. سيظهر وقت الوصول بمجرّد معرفته.',
+    note: 'تقدير يعتمد على المسافة وسرعة متوسطة، وقد تغيّره حركة المرور.',
+    age: '{minutes, plural, one{آخر تحديث للموقع قبل دقيقة} two{آخر تحديث للموقع قبل دقيقتين} few{آخر تحديث للموقع قبل {minutes} دقائق} many{آخر تحديث للموقع قبل {minutes} دقيقة} other{آخر تحديث للموقع قبل {minutes} دقيقة}}',
+    justNow: 'تم تحديث الموقع الآن',
+  },
 };

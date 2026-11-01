@@ -29,6 +29,7 @@ import { reviewParams } from './reviews';
 import type { ReviewPage, ReviewQuery, ReviewRow, ReviewStatus } from './reviews';
 import type { CompanyBody, CompanySettings } from './company';
 import type { QuoteBody } from './quote-builder';
+import type { ArtisanLocationRead, JobRoute, WithArrival } from './location';
 import type { GuestPaymentAnswer, GuestPaymentBody, GuestQuoteBody, PaymentOptions } from './customer';
 import type { BotChallenge } from './bot-check';
 import type {
@@ -218,8 +219,8 @@ export const routes = {
     challenge: () => route<BotChallenge>('get', '/guest/challenge'),
     /** Makes a request without an account. The answer carries the tracking link, once. */
     create: (body: GuestRequestBody) => route<GuestCreated>('post', '/guest/interventions', { body }),
-    /** The tracking page of a visitor: the job, with the link's token. */
-    track: (id: number | string, token: string) => route<TrackingIntervention>('get', `/guest/tracking/${id}`, { params: { token } }),
+    /** The tracking page of a visitor: the job, with the link's token. While the technician is on the way it also carries `arrival` (P3-05). */
+    track: (id: number | string, token: string) => route<WithArrival<TrackingIntervention>>('get', `/guest/tracking/${id}`, { params: { token } }),
     /** Adds pictures to an open request: `body` is a FormData with up to 5 files in the field `photos`. */
     photos: (id: number | string, token: string, body: unknown) =>
       route<GuestPhotosAnswer>('post', `/guest/interventions/${id}/photos`, { params: { token }, body }),
@@ -266,8 +267,12 @@ export const routes = {
     goOnline: () => route<ArtisanAvailabilityAnswer>('patch', '/artisans/me/online'),
     /** Goes offline and stops accepting jobs. */
     goOffline: () => route<ArtisanAvailabilityAnswer>('patch', '/artisans/me/offline'),
-    /** Tells the server where the artisan is. It does not change whether they are online. */
-    location: (body: { latitude: number; longitude: number }) => route<unknown>('patch', '/artisans/me/location', { body }),
+    /**
+     * Tells the server where the artisan is. It does not change whether they are online. The server keeps the position with the time it
+     * was sent and adds it to the history of the job the artisan is on (P3-05); the radius of doubt (metres), the speed (m/s) and the heading
+     * (degrees) are kept with it when the phone gives them. A point that is not a place, or 0,0, is refused.
+     */
+    location: (body: { latitude: number; longitude: number; accuracy?: number; speed?: number; heading?: number }) => route<unknown>('patch', '/artisans/me/location', { body }),
     /**
      * One job as its artisan reads it: the customer, the catalog service, the quotes with their lines, the payments, the invoice
      * and, once the job is theirs, its timeline and messages. (`GET /interventions/:id` has none of the quotes, the service or
@@ -292,7 +297,8 @@ export const routes = {
   client: {
     /** The jobs of the signed-in customer, in the customer's copy. */
     interventions: () => route<ClientIntervention[]>('get', '/client/interventions'),
-    intervention: (id: number | string) => route<ClientIntervention>('get', `/client/interventions/${id}`),
+    /** One job of the customer. While the technician is on the way it also carries `arrival` (P3-05). */
+    intervention: (id: number | string) => route<WithArrival<ClientIntervention>>('get', `/client/interventions/${id}`),
   },
   admin: {
     /** The dispatcher's list: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
@@ -303,6 +309,16 @@ export const routes = {
      * screen's own type. For the roles that work on jobs; a number that is no job's is a 404.
      */
     intervention: <File>(id: number | string) => route<File>('get', `/admin/interventions/${id}`),
+    /**
+     * Where the technician went on a job, for a dispute (P3-05): the positions in order, the moments of the job, how close they came to the
+     * address and how far from it they were when they said they had arrived. For the dispatcher, the support and the admins. The positions
+     * are kept for a few days (`historyDays` in the answer), longer while a complaint is open. A route is one technician's: after a hand-over it
+     * is the one who holds the job, the others are listed in `others`, and `artisanId` reads the route of one of them.
+     */
+    interventionRoute: (id: number | string, artisanId?: number | string) =>
+      route<JobRoute>('get', `/admin/interventions/${id}/route`, artisanId === undefined ? {} : { params: { artisanId } }),
+    /** Where one technician is, how old that position is, and whether it is stale (P3-05). */
+    artisanLocation: (profileId: number | string) => route<ArtisanLocationRead>('get', `/admin/artisans/${profileId}/location`),
     /**
      * Writes a note on a job that only the back office reads (at most 2000 characters, never blank). The answer is
      * the note as the case file lists it, with its author. `Note` is the screen's own type.

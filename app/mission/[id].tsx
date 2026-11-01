@@ -35,6 +35,7 @@ import { DeclineModal } from '@/components/DeclineModal';
 import { MissionTimeline } from '@/components/MissionTimeline';
 import { QuoteCard } from '@/components/QuoteCard';
 import { StatusBadge } from '@/components/StatusBadge';
+import { noteMissionLeft, noteMissionStatus } from '../../services/road-state';
 // 🧩 The flow of a mission, the words of a status and the coordinates of a job, shared with the server and the other apps (P1-09, P1-15)
 import {
   apiErrorStatus,
@@ -174,6 +175,12 @@ export default function MissionDetailScreen() {
     [id, leave, loadPosition, t],
   );
 
+  // The home screen sends the position while a job is on the way, arrived or at work; it is not shown while this screen is, so it is told here
+  // (a technician who is offline and sets out from the notification would otherwise send nothing until they went back).
+  useEffect(() => {
+    if (mission) noteMissionStatus(mission.id, mission.status);
+  }, [mission]);
+
   // The effect below must not start again because `load` was made again: it follows the mission, nothing else.
   const loadNow = useRef(load);
 
@@ -304,6 +311,9 @@ export default function MissionDetailScreen() {
 
       await call(routes.artisans.decline(wanted, declineBody(reason, note)));
 
+      // Home is told at once: the job is no longer the artisan's, whatever its list still says until it reads it again.
+      noteMissionLeft(wanted);
+
       // Off this mission first: it is no longer the artisan's, and an alert shown while the window of reasons is
       // still closing can be lost on an iPhone. The word comes a moment later, on the screen they land on.
       setDeclining(false);
@@ -340,6 +350,10 @@ export default function MissionDetailScreen() {
         // Une photo sur une connexion mobile faible dépasse vite 10 secondes.
         timeout: UPLOAD_TIMEOUT_MS,
       });
+
+      // Home is told at once: the work is over, whatever its list still says until it reads it again (this screen may have been opened from
+      // another tab than Home, which is not drawn again when it is left).
+      noteMissionLeft(id as string);
 
       // Une photo que le serveur n'a pas pu valider seul est gardée et regardée par l'équipe.
       const checked = response.data?.proof?.status === 'NEEDS_REVIEW';

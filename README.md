@@ -108,3 +108,31 @@ package: never edit it.
 common French word. It ignores comments, `console.*`, imports, paths and URLs, and keys. The few exceptions are listed in the script
 with the reason of each (`ALLOWED`). It reads text, it does not understand it: a French sentence with no accent and no common French
 word would pass, so read the diff of a new screen too.
+
+## Position while online (P3-05)
+
+While the technician is **online or busy, or has a job on the way, arrived or at work, and the app is in front**, the phone sends its position about every 30 seconds (`services/position-beat.ts`, started by `app/(tabs)/index.tsx`). The dispatcher
+sees a flag on a technician whose phone has been silent, the customer is given an arrival time only from a recent position, and the server keeps the positions for a few days so that a route can be replayed for a dispute.
+
+- It **stops** when the app goes to the background, when the technician goes offline with no job under way (a technician who switches off to stop new requests while on the way keeps sending until the job is over),
+  when the location is refused or not yet allowed on the phone (the availability card says which: "refused, allow it in the settings", or "press Actualiser ma position to allow it"), and when the technician presses "Se déconnecter" or the session ends in any other way (`stopSharing()` is called first by the profile screen and by `endSession`, because Home is alive behind the screens above it until the session is cleared; a sign-out that fails leaves the technician signed in and starts it again).
+  It starts again when the app comes back to the front, and after "Actualiser ma position" (or the switch) has been allowed.
+  A 401 is a failure like another: the session is renewed by the call itself, a renewal that failed for want of network is tried again at the next beat, and a session that is really over unmounts Home.
+- It **never asks for the permission** (going online and the button do) and never overlaps itself: a start that comes while a reading of an earlier run is still going waits for it. A try that fails is followed by the next one thirty seconds later;
+  after **two** in a row that sent nothing (network down, location services off) the card says so instead of "partagée". A reading of the GPS that does not come back is given up after 20 seconds.
+  A position sent by the button or the switch less than ten seconds before a planned reading delays that reading to thirty seconds counted from it; sent earlier than that, it changes nothing.
+  The next try after a reading was given up waits for the same request to the phone (one pending request, not one more every thirty seconds) for up to two minutes, after which the request is forgotten and asked again; the answer of a request that comes after its try was given up is dropped as old.
+  A try that is stopped while the phone is still reading (sign-out, the app going to the background) sends nothing when the reading arrives.
+  A reading that comes back after its try gave up (a slow first fix, 21 to 49 seconds) is kept for the next try for 45 seconds and used once, so that a phone whose GPS is slow still sends about every other try instead of never; it is not kept across a stop, nor after a position went out another way.
+  An unattended reading never shows the system dialog about the settings of the phone (`mayShowUserSettingsDialog: false`).
+- It sends the place and, when the GPS gives real values, the accuracy, the speed and the heading (a speed of 0 with a heading of 0 is "not known" on Android and neither is sent; a heading is not sent with a speed of 0). Nothing else the phone knows is sent.
+- **What the mission screen knows is told to Home** through a small in-memory store (`services/road-state.ts`, read by Home with `useSyncExternalStore`): Home does not refresh while the mission screen is in front. A technician who is offline, is given a job and sets out from the notification
+  is shared at once; a job completed or given back on the mission screen stops the sharing at once, even if Home's list (opened from another tab) still says "at work". What the mission screen told wins over Home's list for that job until Home reads its list again;
+  a list asked for after the mission screen spoke takes over, a list asked for before does not (it is compared with the moment the list was *asked for*).
+- Signing out (`endSession`) stops the sharing first and forgets every job told in that session; the next session begins with the Home screen (`beginSession`). The screens stacked above Home are cleared before the login is shown.
+- A technician with a screen reader hears the sentence of the card when it turns into a problem (location refused, not allowed yet, or tries failing), once per change and after the state has stood for 0.6 seconds (`AccessibilityInfo.announceForAccessibility`; the live region of a Text is Android only). This was not heard on a device.
+- Home keeps only the newest list of missions: an answer asked for before the one already drawn (a slow network) is dropped. The switch and the refresh button do nothing once a sign-out has begun.
+- Known limits: a job cancelled by the dispatcher while an offline technician stays on another tab keeps the position going out until Home is shown or pulled again (the mission screen tells Home only what it sees itself); a request that was already being retried by the session renewal at the moment of a sign-out can still reach the server once.
+- The card tells the technician that the position is **recorded for a few days during a job and can be read by the support in a dispute** (`app.availability.sharing`); the wording is a business decision and a native reader should look at the Arabic.
+- **Not done: background tracking.** A phone with the app closed is silent, and is flagged after the limit. Reading the position in the background needs the "always" permission, a task registered with `expo-task-manager`,
+  a new native build and the stores' approval of the reason; it is an owner decision. The wording of the permission request (`app.json`) and the privacy notice for technicians are a business decision too.

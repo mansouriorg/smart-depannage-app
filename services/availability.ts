@@ -1,4 +1,5 @@
 import { message, routes, type ArtisanAvailabilityAnswer, type Locale, type RouteSpec } from '../lib/shared';
+import { positionBody, type Reading } from './position-beat';
 
 export type Wanted = 'online' | 'offline';
 
@@ -8,7 +9,7 @@ export type PositionOutcome = 'sent' | 'denied' | 'unavailable' | 'failed' | 'no
 export interface AvailabilityDeps {
   call: <Response>(route: RouteSpec<Response>) => Promise<Response>;
   /** The position of the phone; 'denied' when the person refused the permission, null when there is none to be had. */
-  readPosition: () => Promise<{ latitude: number; longitude: number } | 'denied' | null>;
+  readPosition: () => Promise<Reading | 'denied' | null>;
 }
 
 /** Sends the position. Never throws: a position that could not be sent is an outcome, not a failure of the toggle. */
@@ -19,7 +20,7 @@ export async function sendPosition(deps: AvailabilityDeps): Promise<PositionOutc
     if (point === 'denied') return 'denied';
     if (!point) return 'unavailable';
 
-    await deps.call(routes.artisans.location({ latitude: point.latitude, longitude: point.longitude }));
+    await deps.call(routes.artisans.location(positionBody(point)));
 
     return 'sent';
   } catch {
