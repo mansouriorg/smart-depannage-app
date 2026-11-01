@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -17,17 +16,20 @@ import {
 // ✅ IMPORT REAL API
 import api from '../../services/api';
 // 🧩 Types and words shared with the server and the other apps (P1-09)
-import { MISSION_BUCKETS, callApi, missionBucketOf, routes, serviceNameOf, type ArtisanIntervention } from '@/lib/shared';
+import { callApi, missionBucketOf, missionBuckets, routes, serviceName, type ArtisanIntervention } from '@/lib/shared';
 import { StatusBadge } from '@/components/StatusBadge';
 import { shortDate } from '../../services/display';
-
-// 🏷️ FILTER OPTIONS: the piles the shared package sorts a mission in (to accept, under way, over), whatever
-// spelling or step the status is in. The list used to know four spellings, so a mission that was on the way
-// or had arrived matched no filter.
-const FILTERS = [{ id: 'ALL', label: 'Tout' }, ...MISSION_BUCKETS];
+import { useI18n } from '../../services/i18n';
+import { mirrorStyle } from '../../services/i18n-core';
 
 export default function MissionsScreen() {
   const router = useRouter();
+  const { t, locale, isRtl } = useI18n();
+
+  // 🏷️ FILTER OPTIONS: the piles the shared package sorts a mission in (to accept, under way, over), whatever
+  // spelling or step the status is in. The list used to know four spellings, so a mission that was on the way
+  // or had arrived matched no filter.
+  const FILTERS = [{ id: 'ALL', label: t('app.missions.all') }, ...missionBuckets(locale)];
   
   // States
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,7 +60,7 @@ export default function MissionsScreen() {
   // --- 2. Filter Logic ---
   const filteredMissions = missions.filter(mission => {
     const query = searchQuery.toLowerCase();
-    const title = serviceNameOf(mission.serviceType).toLowerCase();
+    const title = serviceName(mission.serviceType, locale).toLowerCase();
     const address = (mission.address || '').toLowerCase();
     const matchesSearch = title.includes(query) || address.includes(query);
     const matchesStatus = filterStatus === 'ALL' || missionBucketOf(mission.status) === filterStatus;
@@ -74,7 +76,7 @@ export default function MissionsScreen() {
     >
       {/* Header: Service Type & Badge */}
       <View style={styles.cardHeader}>
-        <Text style={styles.title}>{serviceNameOf(item.serviceType)}</Text>
+        <Text style={styles.title}>{serviceName(item.serviceType, locale)}</Text>
         <StatusBadge status={item.status} />
       </View>
 
@@ -86,7 +88,7 @@ export default function MissionsScreen() {
         <View style={styles.detailRow}>
           <Ionicons name="person-outline" size={14} color="#94a3b8" style={{ width: 20 }} />
           <Text style={styles.detailText}>
-             {item.client?.name || "Client Inconnu"}
+             {item.client?.name || t('app.common.unknownClient')}
           </Text>
         </View>
 
@@ -99,14 +101,14 @@ export default function MissionsScreen() {
         {/* Date */}
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={14} color="#94a3b8" style={{ width: 20 }} />
-          <Text style={styles.dateText}>{shortDate(item.createdAt)}</Text>
+          <Text style={[styles.dateText, isRtl && styles.upright]}>{shortDate(item.createdAt, locale)}</Text>
         </View>
       </View>
 
       {/* Footer Arrow */}
       <View style={styles.cardFooter}>
-         <Text style={styles.viewDetailsText}>Voir détails</Text>
-         <Ionicons name="arrow-forward" size={16} color="#D4AF37" />
+         <Text style={styles.viewDetailsText}>{t('app.common.viewDetails')}</Text>
+         <Ionicons name="arrow-forward" size={16} color="#D4AF37" style={mirrorStyle(locale)} />
       </View>
     </TouchableOpacity>
   );
@@ -117,13 +119,13 @@ export default function MissionsScreen() {
       
       {/* Fixed Header Section */}
       <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Mes Missions</Text>
+        <Text style={styles.headerTitle}>{t('app.missions.title')}</Text>
         
         {/* Search Bar */}
         <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#94a3b8" style={{ marginRight: 8 }} />
+          <Ionicons name="search" size={20} color="#94a3b8" style={{ marginEnd: 8 }} />
           <TextInput 
-            placeholder="Rechercher une mission..." 
+            placeholder={t('app.missions.search')} 
             placeholderTextColor="#64748b"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -134,7 +136,9 @@ export default function MissionsScreen() {
 
         {/* Filter Chips */}
         <View style={styles.filterContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 20 }}>
+          {/* A few short chips: they wrap onto a second line on a narrow screen. A scroll view would start at its left end while the row starts
+              on the right (Arabic before the system has been restarted), and the chips on the far side could not be reached. */}
+          <View style={styles.filterRow}>
             {FILTERS.map((filter) => (
               <TouchableOpacity
                 key={filter.id}
@@ -152,7 +156,7 @@ export default function MissionsScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         </View>
       </View>
 
@@ -182,8 +186,8 @@ export default function MissionsScreen() {
               <View style={styles.emptyIconCircle}>
                 <Ionicons name="clipboard-outline" size={40} color="#64748b" />
               </View>
-              <Text style={styles.emptyTitle}>Aucune mission</Text>
-              <Text style={styles.emptyText}>Aucun résultat ne correspond à votre recherche.</Text>
+              <Text style={styles.emptyTitle}>{t('app.common.noMission')}</Text>
+              <Text style={styles.emptyText}>{t('app.missions.noResults')}</Text>
             </View>
           }
         />
@@ -238,14 +242,20 @@ const styles = StyleSheet.create({
   
   // --- FILTERS ---
   filterContainer: {
-    paddingLeft: 20,
+    paddingStart: 20,
+    paddingEnd: 12,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 8,
   },
   filterChip: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#1e293b',
-    marginRight: 8,
+    marginEnd: 8,
     borderWidth: 1,
     borderColor: '#334155',
   },
@@ -317,6 +327,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#94a3b8',
     fontStyle: 'italic',
+  },
+  // Arabic has no italic: a slanted Arabic text looks broken.
+  upright: {
+    fontStyle: 'normal',
   },
   
   // --- CARD FOOTER ---

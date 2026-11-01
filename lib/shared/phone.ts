@@ -12,6 +12,10 @@
  * there): this is for the form, so a mistake is told before the request is sent.
  */
 
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
+import { message } from './i18n';
+import { isolateFor } from './words';
+
 export type PhoneCheck = { ok: true; e164: string; display: string } | { ok: false; reason: 'empty' | 'invalid' };
 
 const COUNTRY = '216';
@@ -60,12 +64,14 @@ export function normalizePhone(raw: unknown): PhoneCheck {
 }
 
 /** The sentence under a phone field, or null when the number is good. */
-export function phoneProblem(raw: unknown): string | null {
+export function phoneProblem(raw: unknown, locale: Locale = DEFAULT_LOCALE): string | null {
   const check = normalizePhone(raw);
 
   if (check.ok) return null;
 
-  return check.reason === 'empty' ? 'Votre numéro de téléphone est requis.' : 'Numéro invalide. Exemple : 22 123 456.';
+  return check.reason === 'empty'
+    ? message(locale, 'guest.problems.phoneRequired')
+    : message(locale, 'guest.problems.phoneInvalid', { example: isolateFor(locale, '22 123 456') });
 }
 
 /** "+21622123456" as "+216 22 123 456"; anything else as it is. */

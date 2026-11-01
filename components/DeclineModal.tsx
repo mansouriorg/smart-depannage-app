@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { DECLINE_REASONS, type MissionRejectionReason } from '@/lib/shared';
+import { declineReasons, type MissionRejectionReason } from '@/lib/shared';
+import { useI18n } from '../services/i18n';
+import { directionStyle } from '../services/i18n-core';
 import { declineIsReady } from '../services/mission-steps';
 
 /** The longest note the screen takes; the back office reads it in a list. */
@@ -24,6 +26,7 @@ export function DeclineModal({
   onCancel: () => void;
   onConfirm: (reason: MissionRejectionReason, note: string) => void;
 }) {
+  const { t, locale } = useI18n();
   const [reason, setReason] = useState<MissionRejectionReason | null>(null);
   const [note, setNote] = useState('');
 
@@ -39,11 +42,12 @@ export function DeclineModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={busy ? undefined : onCancel}>
-      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* A modal is drawn apart from the screen under it, so it takes the direction of the language itself. */}
+      <KeyboardAvoidingView style={[styles.backdrop, directionStyle(locale)]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.sheet}>
           <Text style={styles.title}>{question}</Text>
 
-          {DECLINE_REASONS.map((option) => (
+          {declineReasons(locale).map((option) => (
             <TouchableOpacity
               key={option.value}
               style={[styles.option, reason === option.value && styles.optionOn]}
@@ -61,7 +65,7 @@ export function DeclineModal({
             style={styles.note}
             value={note}
             onChangeText={setNote}
-            placeholder={reason === 'OTHER' ? 'Précisez la raison' : 'Un mot pour l’équipe (facultatif)'}
+            placeholder={reason === 'OTHER' ? t('app.decline.reasonPlaceholder') : t('app.decline.notePlaceholder')}
             placeholderTextColor="#64748b"
             multiline
             maxLength={NOTE_MAX}
@@ -70,7 +74,7 @@ export function DeclineModal({
 
           <View style={styles.buttons}>
             <TouchableOpacity style={styles.cancel} onPress={onCancel} disabled={busy}>
-              <Text style={styles.cancelText}>Annuler</Text>
+              <Text style={styles.cancelText}>{t('common.actions.cancel')}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -78,7 +82,7 @@ export function DeclineModal({
               onPress={() => reason && ready && onConfirm(reason, note.trim())}
               disabled={!ready || busy}
             >
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>Confirmer</Text>}
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.confirmText}>{t('common.actions.confirm')}</Text>}
             </TouchableOpacity>
           </View>
         </View>

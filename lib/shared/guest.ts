@@ -1,9 +1,12 @@
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
 import type { TradeCode } from './generated/trades';
 import { TRADE_CODES } from './generated/trades';
 import type { TrackingIntervention, TrackingInterventionSubService } from './generated/views';
 import { BotCheckBody } from './bot-check';
+import { message } from './i18n';
 import { coordinatesOf } from './navigation';
 import { normalizePhone, phoneProblem } from './phone';
+import { charactersText, isolateFor, photosText } from './words';
 
 /**
  * The request a visitor makes without an account (P1-16): what the form asks, what is sent, and what comes back.
@@ -11,6 +14,9 @@ import { normalizePhone, phoneProblem } from './phone';
  * The numbers below are the server's own limits (create-guest-intervention.dto.ts and guest.service.ts there). The
  * form stops a little earlier where the server's ceiling is only there to bound abuse (a description of 2000
  * characters is allowed, 1000 is asked), and exactly at the same place where the server counts (6 photos).
+ *
+ * The sentences that tell what is wrong are in the catalogue (`guest.problems.*`, `guest.photos.*`): a function that returns one takes
+ * the language as its last argument (`locale`, French when it is left out), or in the `locale` of its `context` where it has one.
  */
 export const GUEST_LIMITS = {
   descriptionMin: 10,
@@ -57,29 +63,31 @@ export function categoryOfTrade(catalog: readonly PublicCategory[] | null | unde
   return { ...category, subServices: (category.subServices ?? []).filter((sub) => sub.isActive !== false) };
 }
 
-/** Dinars as written in French: "89 DT", "45,5 DT" (a dinar has 1000 millimes, so up to three decimals). */
-export function dinars(amount: number): string {
-  return `${String(Number(amount.toFixed(3))).replace('.', ',')} DT`;
+/** Dinars as written in French: "89 DT", "45,5 DT" (a dinar has 1000 millimes, so up to three decimals). In Arabic the unit is "د.ت". */
+export function dinars(amount: number, locale: Locale = DEFAULT_LOCALE): string {
+  return `${String(Number(amount.toFixed(3))).replace('.', ',')} ${message(locale, 'money.unit')}`;
 }
 
 /** What a sub-service costs, as the catalog says: "À partir de 89 DT", or "Sur devis" when it has no list price. */
-export function priceText(sub: Pick<PublicSubService, 'basePrice'>): string {
+export function priceText(sub: Pick<PublicSubService, 'basePrice'>, locale: Locale = DEFAULT_LOCALE): string {
   return typeof sub.basePrice === 'number' && Number.isFinite(sub.basePrice) && sub.basePrice > 0
-    ? `À partir de ${dinars(sub.basePrice)}`
-    : 'Sur devis';
+    ? message(locale, 'money.price.from', { price: isolateFor(locale, dinars(sub.basePrice, locale)) })
+    : message(locale, 'money.price.onQuote');
 }
 
-/** "45 min", "1 h", "1 h 15": the usual duration of a sub-service, or null when the catalog gives none. */
-export function durationText(minutes: number | null | undefined): string | null {
+/** "45 min", "1 h", "1 h 15" ("45 د", "1 س", "1 س 15 د"): the usual duration of a sub-service, or null when the catalog gives none. */
+export function durationText(minutes: number | null | undefined, locale: Locale = DEFAULT_LOCALE): string | null {
   if (typeof minutes !== 'number' || !Number.isFinite(minutes) || minutes <= 0) return null;
 
   const total = Math.round(minutes);
 
-  if (total < 60) return `${total} min`;
+  if (total < 60) return message(locale, 'money.duration.minutes', { minutes: total });
 
   const rest = total % 60;
 
-  return rest === 0 ? `${total / 60} h` : `${Math.floor(total / 60)} h ${String(rest).padStart(2, '0')}`;
+  return rest === 0
+    ? message(locale, 'money.duration.hours', { hours: total / 60 })
+    : message(locale, 'money.duration.hoursMinutes', { hours: Math.floor(total / 60), minutes: locale === 'ar' ? rest : String(rest).padStart(2, '0') });
 }
 
 // ----------------------------------------------------------
@@ -122,9 +130,11 @@ export const EMPTY_GUEST_FORM: GuestRequestForm = {
 
 export type FieldProblems = Partial<Record<keyof GuestRequestForm, string>>;
 
-/** What a step needs to know that is not in the form: the sub-service picked, if the catalog says it wants photos. */
+/** What a step needs to know that is not in the form: the sub-service picked, if the catalog says it wants photos; and the language of the sentences. */
 export interface GuestContext {
   requiresPhotos?: boolean;
+  /** The language the problems are told in (French when left out). */
+  locale?: Locale;
 }
 
 /** Changing the trade drops the sub-service (it belongs to the old trade). */
@@ -135,77 +145,78 @@ export function withTrade(form: GuestRequestForm, trade: TradeCode): GuestReques
 const EMAIL_FORMAT = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 function problemsOfProblemStep(form: GuestRequestForm, context: GuestContext): FieldProblems {
+  const locale = context.locale ?? DEFAULT_LOCALE;
   const problems: FieldProblems = {};
   const description = form.description.trim();
 
   if (!form.serviceType || !(TRADE_CODES as readonly string[]).includes(form.serviceType)) {
-    problems.serviceType = 'Choisissez le type de problème.';
+    problems.serviceType = message(locale, 'guest.problems.serviceType');
   }
 
   if (description.length < GUEST_LIMITS.descriptionMin) {
-    problems.description = `Décrivez le problème en au moins ${GUEST_LIMITS.descriptionMin} caractères.`;
+    problems.description = message(locale, 'guest.problems.descriptionShort', { min: charactersText(GUEST_LIMITS.descriptionMin, locale) });
   } else if (description.length > GUEST_LIMITS.descriptionMax) {
-    problems.description = `La description ne peut pas dépasser ${GUEST_LIMITS.descriptionMax} caractères.`;
+    problems.description = message(locale, 'guest.problems.descriptionLong', { max: charactersText(GUEST_LIMITS.descriptionMax, locale) });
   }
 
   if (context.requiresPhotos && form.photoCount < 1) {
-    problems.photoCount = 'Ce service demande au moins une photo du problème.';
+    problems.photoCount = message(locale, 'guest.problems.photoRequired');
   }
 
   return problems;
 }
 
-function problemsOfPlaceStep(form: GuestRequestForm): FieldProblems {
+function problemsOfPlaceStep(form: GuestRequestForm, locale: Locale): FieldProblems {
   const problems: FieldProblems = {};
   const address = form.address.trim();
 
   if (address.length < GUEST_LIMITS.addressMin) {
-    problems.address = 'Indiquez l’adresse complète de l’intervention.';
+    problems.address = message(locale, 'guest.problems.addressShort');
   } else if (address.length > GUEST_LIMITS.addressMax) {
-    problems.address = `L’adresse ne peut pas dépasser ${GUEST_LIMITS.addressMax} caractères.`;
+    problems.address = message(locale, 'guest.problems.addressLong', { max: charactersText(GUEST_LIMITS.addressMax, locale) });
   }
 
   if (form.accessInstructions.trim().length > GUEST_LIMITS.accessMax) {
-    problems.accessInstructions = `Les précisions d’accès ne peuvent pas dépasser ${GUEST_LIMITS.accessMax} caractères.`;
+    problems.accessInstructions = message(locale, 'guest.problems.accessLong', { max: charactersText(GUEST_LIMITS.accessMax, locale) });
   }
 
   // A position is both numbers or neither: one number alone, or a point that is not on Earth (or the 0,0 of "nothing"), is dropped.
   if ((form.latitude === null) !== (form.longitude === null)) {
-    problems.latitude = 'La position est incomplète. Utilisez-la à nouveau ou retirez-la.';
+    problems.latitude = message(locale, 'guest.problems.positionIncomplete');
   } else if (form.latitude !== null && !coordinatesOf({ latitude: form.latitude, longitude: form.longitude })) {
-    problems.latitude = 'La position n’est pas valable. Utilisez-la à nouveau ou retirez-la.';
+    problems.latitude = message(locale, 'guest.problems.positionInvalid');
   }
 
   return problems;
 }
 
-function problemsOfContactStep(form: GuestRequestForm): FieldProblems {
+function problemsOfContactStep(form: GuestRequestForm, locale: Locale): FieldProblems {
   const problems: FieldProblems = {};
   const name = form.contactName.trim();
   const email = form.contactEmail.trim();
-  const phone = phoneProblem(form.contactPhone);
+  const phone = phoneProblem(form.contactPhone, locale);
 
   if (name.length < GUEST_LIMITS.nameMin) {
-    problems.contactName = 'Votre nom est requis.';
+    problems.contactName = message(locale, 'guest.problems.nameRequired');
   } else if (name.length > GUEST_LIMITS.nameMax) {
-    problems.contactName = `Le nom ne peut pas dépasser ${GUEST_LIMITS.nameMax} caractères.`;
+    problems.contactName = message(locale, 'guest.problems.nameLong', { max: charactersText(GUEST_LIMITS.nameMax, locale) });
   }
 
   if (phone) problems.contactPhone = phone;
 
   if (email && (email.length > GUEST_LIMITS.emailMax || !EMAIL_FORMAT.test(email))) {
-    problems.contactEmail = 'Adresse e-mail invalide.';
+    problems.contactEmail = message(locale, 'guest.problems.emailInvalid');
   }
 
   return problems;
 }
 
-/** What is wrong in one step of the wizard, by field; empty when the step can be left. */
+/** What is wrong in one step of the wizard, by field; empty when the step can be left. The sentences are in `context.locale`. */
 export function stepProblems(step: GuestStep, form: GuestRequestForm, context: GuestContext = {}): FieldProblems {
   if (step === 'problem') return problemsOfProblemStep(form, context);
-  if (step === 'place') return problemsOfPlaceStep(form);
+  if (step === 'place') return problemsOfPlaceStep(form, context.locale ?? DEFAULT_LOCALE);
 
-  return problemsOfContactStep(form);
+  return problemsOfContactStep(form, context.locale ?? DEFAULT_LOCALE);
 }
 
 /** The first step that cannot be left, or null when the whole form is good. */
@@ -305,22 +316,22 @@ export interface GuestProblemBody {
 }
 
 /** What is wrong in an opinion before it is sent, or null. The text is optional; the stars are not. */
-export function feedbackProblem(body: { rating: number; feedbackNotes?: string }): string | null {
-  if (!Number.isInteger(body.rating) || body.rating < 1 || body.rating > 5) return 'Choisissez une note de 1 à 5.';
+export function feedbackProblem(body: { rating: number; feedbackNotes?: string }, locale: Locale = DEFAULT_LOCALE): string | null {
+  if (!Number.isInteger(body.rating) || body.rating < 1 || body.rating > 5) return message(locale, 'guest.problems.ratingRequired');
 
   if ((body.feedbackNotes ?? '').trim().length > GUEST_LIMITS.feedbackMax) {
-    return `Le commentaire ne peut pas dépasser ${GUEST_LIMITS.feedbackMax} caractères.`;
+    return message(locale, 'guest.problems.commentLong', { max: charactersText(GUEST_LIMITS.feedbackMax, locale) });
   }
 
   return null;
 }
 
 /** What is wrong in a problem report before it is sent, or null. */
-export function problemReportProblem(description: string): string | null {
+export function problemReportProblem(description: string, locale: Locale = DEFAULT_LOCALE): string | null {
   const length = description.trim().length;
 
-  if (length < GUEST_LIMITS.problemMin) return `Décrivez le problème en au moins ${GUEST_LIMITS.problemMin} caractères.`;
-  if (length > GUEST_LIMITS.problemMax) return `Le texte ne peut pas dépasser ${GUEST_LIMITS.problemMax} caractères.`;
+  if (length < GUEST_LIMITS.problemMin) return message(locale, 'guest.problems.reportShort', { min: charactersText(GUEST_LIMITS.problemMin, locale) });
+  if (length > GUEST_LIMITS.problemMax) return message(locale, 'guest.problems.reportLong', { max: charactersText(GUEST_LIMITS.problemMax, locale) });
 
   return null;
 }
@@ -336,15 +347,20 @@ export interface PhotoCandidate {
   size: number;
 }
 
-/** Why a picture cannot be sent, or null. A phone's HEIC picture is turned into JPEG by the browser before it gets here. */
-export function photoProblem(file: PhotoCandidate): string | null {
+/**
+ * Why a picture cannot be sent, or null. A phone's HEIC picture is turned into JPEG by the browser before it gets here. The name of the
+ * file is Latin text whatever the language: in Arabic it is set apart from the sentence.
+ */
+export function photoProblem(file: PhotoCandidate, locale: Locale = DEFAULT_LOCALE): string | null {
+  const name = isolateFor(locale, file.name);
+
   if (!(GUEST_LIMITS.photoTypes as readonly string[]).includes(file.type)) {
-    return `${file.name} : seules les images JPEG, PNG ou WebP sont acceptées.`;
+    return message(locale, 'guest.photos.badType', { name, jpeg: isolateFor(locale, 'JPEG'), png: isolateFor(locale, 'PNG'), webp: isolateFor(locale, 'WebP') });
   }
 
-  if (file.size <= 0) return `${file.name} : le fichier est vide.`;
+  if (file.size <= 0) return message(locale, 'guest.photos.empty', { name });
 
-  if (file.size > GUEST_LIMITS.photoBytes) return `${file.name} : l’image dépasse 5 Mo.`;
+  if (file.size > GUEST_LIMITS.photoBytes) return message(locale, 'guest.photos.tooBig', { name, megabytes: GUEST_LIMITS.photoBytes / (1024 * 1024) });
 
   return null;
 }
@@ -353,18 +369,18 @@ export function photoProblem(file: PhotoCandidate): string | null {
  * Which of the pictures just picked to keep, given how many the request already holds: the good ones, in order, up to
  * the room left (6 in all). The others come back as sentences.
  */
-export function pickPhotos(already: number, picked: readonly PhotoCandidate[]): { keep: number[]; problems: string[] } {
+export function pickPhotos(already: number, picked: readonly PhotoCandidate[], locale: Locale = DEFAULT_LOCALE): { keep: number[]; problems: string[] } {
   const keep: number[] = [];
   const problems: string[] = [];
   let room = Math.max(0, GUEST_LIMITS.photosTotal - already);
 
   picked.forEach((file, index) => {
-    const problem = photoProblem(file);
+    const problem = photoProblem(file, locale);
 
     if (problem) {
       problems.push(problem);
     } else if (room <= 0) {
-      problems.push(`${file.name} : vous pouvez joindre ${GUEST_LIMITS.photosTotal} photos au maximum.`);
+      problems.push(message(locale, 'guest.photos.tooMany', { name: isolateFor(locale, file.name), max: photosText(GUEST_LIMITS.photosTotal, locale) }));
     } else {
       keep.push(index);
       room--;

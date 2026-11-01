@@ -1,4 +1,4 @@
-import { apiErrorMessage, apiErrorStatus, quoteThatArrived, type ArtisanInterventionQuote } from '../lib/shared';
+import { apiErrorMessage, apiErrorStatus, quoteThatArrived, translator, type ArtisanInterventionQuote, type Locale } from '../lib/shared';
 
 /**
  * What the quote and cash screens do when a call does not go as planned (P2-05).
@@ -34,19 +34,25 @@ export type QuoteSendResult =
 function sentence(text: string): string {
   const trimmed = text.trim();
 
-  return /[.!?…]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  return /[.!?…؟]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
-export const QUOTE_WORDS = {
-  refused: 'Le devis n’a pas pu être envoyé. Réessayez.',
-  refusedChange: 'Les modifications n’ont pas pu être enregistrées. Réessayez.',
-  notSent: 'Le devis n’a pas été envoyé : le serveur n’a pas répondu. Vous pouvez réessayer.',
-  notSentChange: 'Le serveur n’a pas répondu : les modifications ne sont peut-être pas enregistrées. Vous pouvez réessayer.',
-  unknown: 'Le serveur n’a pas répondu : le devis est peut-être parti. Ouvrez la mission pour le vérifier avant de le renvoyer.',
-  changedUnknown: 'Les modifications sont enregistrées. Le serveur n’a pas répondu ensuite : le devis est peut-être reparti vers le client. Ouvrez la mission pour le vérifier.',
-  changedNotResentOffline: 'Les modifications sont enregistrées, mais le devis n’est pas reparti vers le client : le serveur n’a pas répondu. Touchez « Renvoyer au client » pour réessayer.',
-  changedNotResent: (why: string) => `Les modifications sont enregistrées, mais le devis n’a pas pu repartir vers le client : ${sentence(why)} Touchez « Renvoyer au client » pour réessayer.`,
-} as const;
+/** What the artisan is told about a quote that did not go as planned, in the language of the app. */
+export function quoteWords(locale: Locale) {
+  const say = translator(locale);
+
+  return {
+    refused: say('app.money.quote.refused'),
+    refusedChange: say('app.money.quote.refusedChange'),
+    notSent: say('app.money.quote.notSent'),
+    notSentChange: say('app.money.quote.notSentChange'),
+    unknown: say('app.money.quote.unknown'),
+    changedUnknown: say('app.money.quote.changedUnknown'),
+    changedNotResentOffline: say('app.money.quote.changedNotResentOffline'),
+    changedNotResent: (why: string) => say('app.money.quote.changedNotResent', { why: sentence(why) }),
+    serverRefused: say('app.money.quote.serverRefused'),
+  };
+}
 
 /**
  * Sends a quote (`mode: 'create'`) or its changes (`'update'`) and says what happened. `send` makes the call. After a call whose
@@ -67,31 +73,34 @@ export async function sendQuote(options: {
   quotesBefore: ReadonlyArray<{ id: number }>;
   sent: { title: string; amountTTC: number };
   reload: () => Promise<ReadonlyArray<ArtisanInterventionQuote> | null | undefined>;
+  /** The language of the app: the sentences of the result are in it. */
+  locale: Locale;
 }): Promise<QuoteSendResult> {
   const change = options.mode === 'update';
+  const words = quoteWords(options.locale);
 
   let saved: ArtisanInterventionQuote;
 
   try {
     saved = await options.send();
   } catch (error) {
-    if (!outcomeIsUnknown(error)) return { kind: 'refused', message: apiErrorMessage(error, change ? QUOTE_WORDS.refusedChange : QUOTE_WORDS.refused) };
+    if (!outcomeIsUnknown(error)) return { kind: 'refused', message: apiErrorMessage(error, change ? words.refusedChange : words.refused) };
 
-    if (change) return { kind: 'not-sent', message: QUOTE_WORDS.notSentChange };
+    if (change) return { kind: 'not-sent', message: words.notSentChange };
 
     let after: ReadonlyArray<ArtisanInterventionQuote> | null | undefined;
 
     try {
       after = await options.reload();
     } catch {
-      return { kind: 'unknown', message: QUOTE_WORDS.unknown };
+      return { kind: 'unknown', message: words.unknown };
     }
 
-    if (after === null || after === undefined) return { kind: 'unknown', message: QUOTE_WORDS.unknown };
+    if (after === null || after === undefined) return { kind: 'unknown', message: words.unknown };
 
     const arrived = quoteThatArrived(options.quotesBefore, after, options.sent);
 
-    return arrived ? { kind: 'recovered', quote: arrived } : { kind: 'not-sent', message: QUOTE_WORDS.notSent };
+    return arrived ? { kind: 'recovered', quote: arrived } : { kind: 'not-sent', message: words.notSent };
   }
 
   // The answer of the change decides, not what the screen knew when it opened: the customer may have asked for a change since.
@@ -115,17 +124,22 @@ export async function sendQuote(options: {
     if (now && now.status === 'SENT') return { kind: 'recovered', quote: now };
 
     if (after === null || after === undefined) {
-      return unknown ? { kind: 'unknown', message: QUOTE_WORDS.changedUnknown } : { kind: 'changed-not-resent', message: QUOTE_WORDS.changedNotResent(apiErrorMessage(error, 'le serveur a refusé.')) };
+      return unknown ? { kind: 'unknown', message: words.changedUnknown } : { kind: 'changed-not-resent', message: words.changedNotResent(apiErrorMessage(error, words.serverRefused)) };
     }
 
-    return { kind: 'changed-not-resent', message: unknown ? QUOTE_WORDS.changedNotResentOffline : QUOTE_WORDS.changedNotResent(apiErrorMessage(error, 'le serveur a refusé.')) };
+    return { kind: 'changed-not-resent', message: unknown ? words.changedNotResentOffline : words.changedNotResent(apiErrorMessage(error, words.serverRefused)) };
   }
 }
 
-export const CASH_WORDS = {
-  refused: 'L’encaissement n’a pas pu être enregistré. Réessayez.',
-  unknown: 'Le serveur n’a pas répondu. L’encaissement est peut-être enregistré : regardez le reste à payer avant de réessayer. Le même montant ne sera pas enregistré deux fois.',
-} as const;
+/** What the artisan is told about a collection that did not go through, in the language of the app. */
+export function cashWords(locale: Locale) {
+  const say = translator(locale);
+
+  return {
+    refused: say('app.money.cash.refused'),
+    unknown: say('app.money.cash.unknown'),
+  };
+}
 
 export interface CollectFailure {
   message: string;
@@ -134,8 +148,10 @@ export interface CollectFailure {
 }
 
 /** What the artisan is told when the collection did not go through. */
-export function collectFailure(error: unknown): CollectFailure {
-  if (outcomeIsUnknown(error)) return { message: CASH_WORDS.unknown, refused: false };
+export function collectFailure(error: unknown, locale: Locale): CollectFailure {
+  const words = cashWords(locale);
 
-  return { message: apiErrorMessage(error, CASH_WORDS.refused), refused: true };
+  if (outcomeIsUnknown(error)) return { message: words.unknown, refused: false };
+
+  return { message: apiErrorMessage(error, words.refused), refused: true };
 }

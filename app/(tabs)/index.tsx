@@ -18,13 +18,15 @@ import { apiErrorMessage } from '../../services/api';
 import { call } from '../../services/call';
 import { positionNotice, sendPosition, switchAvailability, type AvailabilityDeps } from '../../services/availability';
 import { coordinatesOnFile, coordinatesText, firstNameOf, initialsOf, shortDate, verificationNotice } from '../../services/display';
+import { useI18n } from '../../services/i18n';
+import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
 import { AvailabilityCard } from '@/components/AvailabilityCard';
 import { StatusBadge } from '@/components/StatusBadge';
 import {
   availabilityView,
   missionBucketOf,
   routes,
-  serviceNameOf,
+  serviceName,
   slimProfile,
   type ArtisanIntervention,
   type ArtisanSelf,
@@ -48,6 +50,7 @@ function inOrder(missions: ArtisanIntervention[]): ArtisanIntervention[] {
 // ----------------------------------------------------------------------
 export default function WorkerDashboard() {
   const router = useRouter();
+  const { t, locale, isRtl } = useI18n();
 
   // Who the artisan is and whether they are online: what the server says (P1-15), not a guess of the phone.
   const [self, setSelf] = useState<ArtisanSelf | null>(null);
@@ -128,7 +131,7 @@ export default function WorkerDashboard() {
     try {
       const found = await Location.reverseGeocodeAsync(point);
       const place = found[0];
-      const label = place ? [place.street || place.name, place.city || place.subregion].filter(Boolean).join(', ') : '';
+      const label = place ? joinList([place.street || place.name, place.city || place.subregion], locale) : '';
 
       if (label) setWhere(label);
     } catch {
@@ -152,11 +155,11 @@ export default function WorkerDashboard() {
       if (answer.availabilityStatus === 'OFFLINE') setWhere(null);
       else if (position === 'sent' && lastRead.current) void showPlace(lastRead.current);
 
-      const notice = positionNotice(position);
+      const notice = positionNotice(position, locale);
 
-      if (notice) Alert.alert('Position', notice);
+      if (notice) Alert.alert(t('app.home.positionTitle'), notice);
     } catch (error) {
-      Alert.alert('Erreur', apiErrorMessage(error, 'Votre disponibilité n’a pas pu être changée. Réessayez.'));
+      Alert.alert(t('common.states.error'), apiErrorMessage(error, t('app.home.availabilityFailed')));
     } finally {
       working.current = false;
       setSwitching(false);
@@ -174,8 +177,8 @@ export default function WorkerDashboard() {
 
       if (outcome === 'sent') {
         if (lastRead.current) void showPlace(lastRead.current);
-        Alert.alert('Position', 'Position mise à jour !');
-      } else Alert.alert('Position', positionNotice(outcome) ?? 'Position non mise à jour.');
+        Alert.alert(t('app.home.positionTitle'), t('app.home.positionUpdated'));
+      } else Alert.alert(t('app.home.positionTitle'), positionNotice(outcome, locale) ?? t('app.home.positionNotUpdated'));
     } finally {
       working.current = false;
       setPositionLoading(false);
@@ -196,7 +199,7 @@ export default function WorkerDashboard() {
           <View style={styles.iconContainer}>
             <Ionicons name="construct" size={16} color="#D4AF37" />
           </View>
-          <Text style={styles.missionTitle}>{serviceNameOf(mission.serviceType)}</Text>
+          <Text style={styles.missionTitle}>{serviceName(mission.serviceType, locale)}</Text>
         </View>
         <StatusBadge status={mission.status} paddingVertical={5} />
       </View>
@@ -207,7 +210,7 @@ export default function WorkerDashboard() {
       <View style={styles.missionDetails}>
         <View style={styles.detailRow}>
           <Ionicons name="person-outline" size={14} color="#94a3b8" style={styles.detailIcon} />
-          <Text style={styles.clientName}>{mission.client?.name || "Client Inconnu"}</Text>
+          <Text style={styles.clientName}>{mission.client?.name || t('app.common.unknownClient')}</Text>
         </View>
         
         <View style={styles.detailRow}>
@@ -217,19 +220,19 @@ export default function WorkerDashboard() {
 
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={14} color="#94a3b8" style={styles.detailIcon} />
-          <Text style={styles.missionDate}>{shortDate(mission.createdAt)}</Text>
+          <Text style={[styles.missionDate, isRtl && styles.upright]}>{shortDate(mission.createdAt, locale)}</Text>
         </View>
       </View>
 
       {/* Action Arrow */}
       <View style={styles.cardFooter}>
-         <Text style={styles.viewDetailsText}>Voir détails</Text>
-         <Ionicons name="arrow-forward" size={16} color="#D4AF37" />
+         <Text style={styles.viewDetailsText}>{t('app.common.viewDetails')}</Text>
+         <Ionicons name="arrow-forward" size={16} color="#D4AF37" style={mirrorStyle(locale)} />
       </View>
     </TouchableOpacity>
   );
 
-  const notice = self ? verificationNotice(self.verificationStatus) : null;
+  const notice = self ? verificationNotice(self.verificationStatus, locale) : null;
   const name = self?.user.name;
   // The last position the server holds, until the artisan sends a new one from this screen.
   const placeOnFile = self ? coordinatesOnFile(self.user.latitude, self.user.longitude) : null;
@@ -265,8 +268,8 @@ export default function WorkerDashboard() {
               <View style={[styles.onlineBadge, { backgroundColor: view === 'online' ? '#10b981' : view === 'busy' ? '#f59e0b' : '#64748b' }]} />
             </View>
             <View>
-              <Text style={styles.greeting}>Bonjour,</Text>
-              <Text style={styles.roleBadge}>{firstNameOf(name) ?? 'Technicien'}</Text>
+              <Text style={styles.greeting}>{t('app.home.greeting')}</Text>
+              <Text style={[styles.roleBadge, { letterSpacing: spacing(locale, 0.5) }]}>{firstNameOf(name) ?? t('app.common.technician')}</Text>
             </View>
           </View>
         </View>
@@ -291,7 +294,7 @@ export default function WorkerDashboard() {
 
         {/* SECTION TITLE */}
         <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Missions Assignées</Text>
+            <Text style={styles.sectionTitle}>{t('app.home.assignedMissions')}</Text>
             {missions.length > 0 && <View style={styles.countBadge}><Text style={styles.countText}>{missions.length}</Text></View>}
         </View>
 
@@ -304,8 +307,8 @@ export default function WorkerDashboard() {
               <View style={styles.emptyIconCircle}>
                  <Ionicons name="briefcase-outline" size={40} color="#64748b" />
               </View>
-              <Text style={styles.emptyTitle}>Aucune mission</Text>
-              <Text style={styles.emptyText}>Vous n'avez pas encore de mission assignée pour le moment.</Text>
+              <Text style={styles.emptyTitle}>{t('app.common.noMission')}</Text>
+              <Text style={styles.emptyText}>{t('app.home.noAssigned')}</Text>
             </View>
           ) : (
             <View style={{ gap: 16 }}>
@@ -343,7 +346,7 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     position: 'relative',
-    marginRight: 16,
+    marginEnd: 16,
   },
   avatar: {
     width: 56,
@@ -367,7 +370,7 @@ const styles = StyleSheet.create({
   onlineBadge: {
     position: 'absolute',
     bottom: -2,
-    right: -2,
+    end: -2,
     width: 16,
     height: 16,
     borderRadius: 8,
@@ -383,7 +386,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
   },
   noticeBox: {
     flexDirection: 'row',
@@ -493,6 +495,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#64748b',
     fontStyle: 'italic',
+  },
+  // Arabic has no italic: a slanted Arabic text looks broken.
+  upright: {
+    fontStyle: 'normal',
   },
   cardFooter: {
     flexDirection: 'row',

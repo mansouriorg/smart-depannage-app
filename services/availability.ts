@@ -1,4 +1,4 @@
-import { routes, type ArtisanAvailabilityAnswer, type RouteSpec } from '../lib/shared';
+import { message, routes, type ArtisanAvailabilityAnswer, type Locale, type RouteSpec } from '../lib/shared';
 
 export type Wanted = 'online' | 'offline';
 
@@ -47,13 +47,13 @@ export async function switchAvailability(
 }
 
 /** What to tell the artisan about their position, or null when there is nothing to say. */
-export function positionNotice(outcome: PositionOutcome): string | null {
+export function positionNotice(outcome: PositionOutcome, locale: Locale): string | null {
   switch (outcome) {
     case 'denied':
-      return 'Vous êtes en ligne, mais sans votre position les clients proches ne peuvent pas vous trouver. Autorisez la localisation dans les réglages du téléphone.';
+      return message(locale, 'app.availability.notice.denied');
     case 'unavailable':
     case 'failed':
-      return 'Vous êtes en ligne, mais votre position n’a pas pu être envoyée. Réessayez avec « Actualiser ma position ».';
+      return message(locale, 'app.availability.notice.failed');
     default:
       return null;
   }

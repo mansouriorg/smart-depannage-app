@@ -10,6 +10,9 @@
  * (`MAX_UNIT_PRICE`, `MAX_QUANTITY`, `MAX_LINE_TOTAL`, and 20 lines per quote in quote-builder) are tighter than the server's.
  */
 
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
+import { message } from './i18n';
+
 export const MILLIMES_PER_DINAR = 1000;
 
 /** The dearest unit price a line accepts, in dinars. */
@@ -157,21 +160,23 @@ const NBSP = ' ';
 
 /**
  * Whole millimes as the money screens write them: three decimals, a comma, thousands set apart ("1 234,500 DT"). A minus sign
- * stays attached to the figure.
+ * stays attached to the figure. The unit is the dinar of the language ("DT", "د.ت") unless one is given; the digits and the comma
+ * are the same in both languages (Latin digits, as the amount fields read them). In Arabic the screen sets the whole text left to
+ * right (`dir="ltr"`), or the sign of a negative amount would jump to the other end.
  */
-export function formatMillimes(millimes: number, unit = 'DT'): string {
+export function formatMillimes(millimes: number, unit?: string, locale: Locale = DEFAULT_LOCALE): string {
   const rounded = Math.round(millimes);
   const negative = rounded < 0;
   const magnitude = Math.abs(rounded);
   const whole = String(Math.floor(magnitude / MILLIMES_PER_DINAR)).replace(/\B(?=(\d{3})+(?!\d))/g, NBSP);
   const fraction = String(magnitude % MILLIMES_PER_DINAR).padStart(3, '0');
 
-  return `${negative ? '-' : ''}${whole},${fraction}${NBSP}${unit}`;
+  return `${negative ? '-' : ''}${whole},${fraction}${NBSP}${unit ?? message(locale, 'money.unit')}`;
 }
 
 /** An amount in dinars (as the server sends it) written as `formatMillimes` does. */
-export function formatDinars(dinars: number, unit = 'DT'): string {
-  return formatMillimes(toMillimes(dinars), unit);
+export function formatDinars(dinars: number, unit?: string, locale: Locale = DEFAULT_LOCALE): string {
+  return formatMillimes(toMillimes(dinars), unit, locale);
 }
 
 /** A quantity in hundredths as it is written ("2", "1,5", "0,25"). */

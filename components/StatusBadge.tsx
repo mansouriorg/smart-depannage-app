@@ -2,7 +2,9 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 // 🧩 Words and colours of a status, shared with the server and the other apps (P1-09)
-import { canonicalStatus, statusColor, statusLabel, statusTone, type CanonicalStatus } from '@/lib/shared';
+import { canonicalStatus, statusColor, statusLabel, statusTone, type CanonicalStatus, type MessageKey } from '@/lib/shared';
+import { useI18n } from '../services/i18n';
+import { spacing } from '../services/i18n-core';
 
 /**
  * The one badge of the app (P1-15): the home list, the missions list and the mission screen all show a status
@@ -11,11 +13,11 @@ import { canonicalStatus, statusColor, statusLabel, statusTone, type CanonicalSt
  */
 
 /** The four looks the app has always had (the gold of "accepted" is the brand's, not a tone). */
-const LOOKS: Partial<Record<CanonicalStatus, { color: string; text: string }>> = {
-  CREATED: { color: '#f59e0b', text: 'En Attente' },
-  ARTISAN_ACCEPTED: { color: '#D4AF37', text: 'Accepté' },
-  IN_PROGRESS: { color: '#8b5cf6', text: 'En Cours' },
-  COMPLETED: { color: '#10b981', text: 'Terminé' },
+const LOOKS: Partial<Record<CanonicalStatus, { color: string; text: MessageKey }>> = {
+  CREATED: { color: '#f59e0b', text: 'app.statusBadge.created' },
+  ARTISAN_ACCEPTED: { color: '#D4AF37', text: 'app.statusBadge.accepted' },
+  IN_PROGRESS: { color: '#8b5cf6', text: 'app.statusBadge.inProgress' },
+  COMPLETED: { color: '#10b981', text: 'app.statusBadge.completed' },
 };
 
 const hexToRgba = (hex: string, alpha: number) => {
@@ -39,6 +41,7 @@ export const StatusBadge = ({
   /** A bigger pill, for the top of a screen. */
   large?: boolean;
 }) => {
+  const { t, locale } = useI18n();
   const canonical = canonicalStatus(status);
   const tone = statusTone(status);
   const look = canonical ? LOOKS[canonical] : undefined;
@@ -52,19 +55,19 @@ export const StatusBadge = ({
     bgColor = hexToRgba(look.color, 0.15);
     borderColor = look.color;
     textColor = look.color;
-    text = look.text;
+    text = t(look.text);
   } else if (tone) {
     const color = statusColor(tone);
 
     bgColor = hexToRgba(color, 0.15);
     borderColor = color;
     textColor = color;
-    text = statusLabel(status);
+    text = statusLabel(status, '', locale);
   }
 
   return (
     <View style={[styles.badge, large && styles.badgeLarge, { backgroundColor: bgColor, borderColor, paddingVertical: large ? 8 : paddingVertical }]}>
-      <Text style={[styles.text, large && styles.textLarge, { color: textColor }]}>{text}</Text>
+      <Text style={[styles.text, large && styles.textLarge, { color: textColor }, large && { letterSpacing: spacing(locale, 1) }]}>{text}</Text>
     </View>
   );
 };
@@ -87,6 +90,5 @@ const styles = StyleSheet.create({
   },
   textLarge: {
     fontSize: 13,
-    letterSpacing: 1,
   },
 });

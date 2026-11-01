@@ -5,6 +5,8 @@ import { ActivityIndicator, RefreshControl, ScrollView, StatusBar, StyleSheet, T
 
 import { call } from '../../services/call';
 import { shortDateTime } from '../../services/display';
+import { useI18n } from '../../services/i18n';
+import { joinList, spacing } from '../../services/i18n-core';
 // 🧩 The ledger: the balance owed to the platform and the lines it is made of (P2-05; the server side is P2-02)
 import { apiErrorMessage, apiErrorStatus, appendEntries, entryWords, formatMillimes, ledgerSummary, routes, toMillimes, type LedgerEntry, type LedgerTotals } from '@/lib/shared';
 
@@ -25,6 +27,7 @@ const DIRECTION = {
 
 export default function EarningsScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
 
   const [totals, setTotals] = useState<LedgerTotals | null>(null);
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -59,7 +62,7 @@ export default function EarningsScreen() {
       if (latest.current !== mine) return;
 
       console.error('Error fetching the ledger:', apiErrorStatus(error) ?? (error as Error)?.message);
-      setFailure(apiErrorMessage(error, 'Impossible de charger vos gains. Vérifiez votre connexion et réessayez.'));
+      setFailure(apiErrorMessage(error, t('app.earnings.loadFailed')));
     } finally {
       if (latest.current === mine) {
         reloading.current = false;
@@ -67,7 +70,7 @@ export default function EarningsScreen() {
         setRefreshing(false);
       }
     }
-  }, []);
+  }, [t]);
 
   // A tap on a line opens its mission once: the guard is lifted when this tab has the focus again.
   const opening = useRef(false);
@@ -111,7 +114,7 @@ export default function EarningsScreen() {
       if (latest.current !== mine) return;
 
       console.error('Error fetching more of the ledger:', apiErrorStatus(error) ?? (error as Error)?.message);
-      setFailure(apiErrorMessage(error, 'Impossible de charger la suite. Réessayez.'));
+      setFailure(apiErrorMessage(error, t('app.earnings.loadMoreFailed')));
     } finally {
       reading.current = false;
       setLoadingMore(false);
@@ -127,7 +130,7 @@ export default function EarningsScreen() {
     );
   }
 
-  const summary = totals ? ledgerSummary(totals) : null;
+  const summary = totals ? ledgerSummary(totals, locale) : null;
   const tone = summary ? TONES[summary.tone] : null;
 
   return (
@@ -135,7 +138,7 @@ export default function EarningsScreen() {
       <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mes gains</Text>
+        <Text style={styles.headerTitle}>{t('app.earnings.title')}</Text>
       </View>
 
       <ScrollView
@@ -163,7 +166,7 @@ export default function EarningsScreen() {
               }}
               accessibilityRole="button"
             >
-              <Text style={styles.bannerAction}>Réessayer</Text>
+              <Text style={styles.bannerAction}>{t('common.actions.retry')}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -173,41 +176,39 @@ export default function EarningsScreen() {
             <View style={[styles.balanceCard, { borderColor: tone.color }]}>
               <View style={styles.balanceHead}>
                 <Ionicons name={tone.icon} size={22} color={tone.color} />
-                <Text style={[styles.balanceHeadline, { color: tone.color }]}>{summary.headline}</Text>
+                <Text style={[styles.balanceHeadline, { color: tone.color, letterSpacing: spacing(locale, 0.5) }]}>{summary.headline}</Text>
               </View>
-              <Text style={styles.balanceAmount} accessibilityLabel={`${summary.headline} : ${summary.amountText}`}>
+              <Text style={styles.balanceAmount} accessibilityLabel={t('app.earnings.balanceLabel', { headline: summary.headline, amount: summary.amountText })}>
                 {summary.amountText}
               </Text>
               <Text style={styles.keeps}>{summary.keepsText}</Text>
             </View>
 
             <View style={styles.stats}>
-              <Stat label="Espèces encaissées" value={formatMillimes(toMillimes(totals.cashCollected))} />
-              <Stat label="Commission due" value={formatMillimes(toMillimes(totals.commissionDue))} />
-              <Stat label="Déjà reversé" value={formatMillimes(toMillimes(totals.commissionRemitted))} />
+              <Stat label={t('app.earnings.cashCollected')} value={formatMillimes(toMillimes(totals.cashCollected), undefined, locale)} />
+              <Stat label={t('app.earnings.commissionDue')} value={formatMillimes(toMillimes(totals.commissionDue), undefined, locale)} />
+              <Stat label={t('app.earnings.commissionRemitted')} value={formatMillimes(toMillimes(totals.commissionRemitted), undefined, locale)} />
             </View>
 
             <View style={styles.info}>
               <Ionicons name="information-circle-outline" size={18} color="#94a3b8" />
-              <Text style={styles.infoText}>
-                La commission est le pourcentage de la plateforme sur les espèces que vous encaissez. Votre versement est enregistré par l’équipe une fois reçu.
-              </Text>
+              <Text style={styles.infoText}>{t('app.earnings.info')}</Text>
             </View>
           </>
         ) : null}
 
-        <Text style={styles.sectionTitle}>HISTORIQUE</Text>
+        <Text style={[styles.sectionTitle, { letterSpacing: spacing(locale, 1) }]}>{t('app.earnings.history')}</Text>
 
         {entries.length === 0 ? (
           failure && totals === null ? null : (
             <View style={styles.empty}>
               <Ionicons name="wallet-outline" size={40} color="#475569" />
-              <Text style={styles.emptyText}>Aucun mouvement pour le moment. Les espèces que vous encaissez sur une mission apparaîtront ici.</Text>
+              <Text style={styles.emptyText}>{t('app.earnings.empty')}</Text>
             </View>
           )
         ) : (
           entries.map((entry) => {
-            const words = entryWords(entry);
+            const words = entryWords(entry, locale);
 
             return (
               <TouchableOpacity
@@ -216,11 +217,11 @@ export default function EarningsScreen() {
                 disabled={entry.interventionId === null}
                 onPress={() => entry.interventionId !== null && openMission(entry.interventionId)}
                 accessibilityRole={entry.interventionId === null ? undefined : 'button'}
-                accessibilityLabel={[words.title, shortDateTime(entry.createdAt), words.effect, words.cash, words.detail].filter(Boolean).join(', ')}
+                accessibilityLabel={joinList([words.title, shortDateTime(entry.createdAt, locale), words.effect, words.cash, words.detail], locale)}
               >
                 <View style={{ flex: 1, gap: 2 }}>
                   <Text style={styles.entryTitle}>{words.title}</Text>
-                  <Text style={styles.entryDate}>{shortDateTime(entry.createdAt)}</Text>
+                  <Text style={styles.entryDate}>{shortDateTime(entry.createdAt, locale)}</Text>
                   {words.detail ? <Text style={styles.entryDetail}>{words.detail}</Text> : null}
                 </View>
                 <View style={styles.entryFigures}>
@@ -234,7 +235,7 @@ export default function EarningsScreen() {
 
         {nextBefore !== null ? (
           <TouchableOpacity style={[styles.more, loadingMore && styles.moreOff]} onPress={loadMore} disabled={loadingMore} accessibilityRole="button">
-            {loadingMore ? <ActivityIndicator color="#D4AF37" /> : <Text style={styles.moreText}>Voir plus</Text>}
+            {loadingMore ? <ActivityIndicator color="#D4AF37" /> : <Text style={styles.moreText}>{t('app.earnings.more')}</Text>}
           </TouchableOpacity>
         ) : null}
       </ScrollView>
@@ -266,19 +267,20 @@ const styles = StyleSheet.create({
 
   balanceCard: { backgroundColor: '#1e293b', borderRadius: 20, padding: 20, borderWidth: 1, gap: 8 },
   balanceHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  balanceHeadline: { fontSize: 14, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase', flex: 1 },
-  balanceAmount: { fontSize: 34, fontWeight: 'bold', color: '#fff' },
+  balanceHeadline: { fontSize: 14, fontWeight: '800', textTransform: 'uppercase', flex: 1 },
+  // Amounts are read left to right, in French and in Arabic: a sign and a unit keep their place.
+  balanceAmount: { fontSize: 34, fontWeight: 'bold', color: '#fff', writingDirection: 'ltr' },
   keeps: { color: '#cbd5e1', fontSize: 14, lineHeight: 20 },
 
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   stat: { flexGrow: 1, flexBasis: 100, minWidth: 100, backgroundColor: '#1e293b', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#334155', gap: 4 },
-  statValue: { color: '#e2e8f0', fontSize: 14, fontWeight: '700' },
+  statValue: { color: '#e2e8f0', fontSize: 14, fontWeight: '700', writingDirection: 'ltr' },
   statLabel: { color: '#94a3b8', fontSize: 11, lineHeight: 14 },
 
   info: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
   infoText: { flex: 1, color: '#94a3b8', fontSize: 13, lineHeight: 19 },
 
-  sectionTitle: { fontSize: 12, color: '#D4AF37', fontWeight: '800', letterSpacing: 1, marginTop: 8 },
+  sectionTitle: { fontSize: 12, color: '#D4AF37', fontWeight: '800', marginTop: 8 },
 
   empty: { alignItems: 'center', gap: 12, padding: 24 },
   emptyText: { color: '#94a3b8', fontSize: 14, lineHeight: 21, textAlign: 'center' },
@@ -288,7 +290,7 @@ const styles = StyleSheet.create({
   entryDate: { color: '#94a3b8', fontSize: 12 },
   entryDetail: { color: '#94a3b8', fontSize: 12, lineHeight: 17 },
   entryFigures: { alignItems: 'flex-end', gap: 2 },
-  entryEffect: { fontSize: 15, fontWeight: 'bold' },
+  entryEffect: { fontSize: 15, fontWeight: 'bold', writingDirection: 'ltr' },
   entryCash: { color: '#94a3b8', fontSize: 12 },
 
   more: { height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#D4AF37' },

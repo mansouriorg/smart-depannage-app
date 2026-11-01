@@ -6,12 +6,19 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View
 import api, { endSession, getRefreshToken } from '../../services/api';
 import { call } from '../../services/call';
 import { initialsOf, memberSince, ratingText, tradesText, verificationNotice } from '../../services/display';
+import { useI18n } from '../../services/i18n';
+import { joinList, mirrorStyle, spacing } from '../../services/i18n-core';
 import { unregisterPush } from '../../services/push';
 import { runBestEffort } from '../../services/sign-out';
-import { routes, slimProfile, type ArtisanSelf } from '@/lib/shared';
+import { LanguageSelector } from '@/components/LanguageSelector';
+import { isolateFor, routes, slimProfile, type ArtisanSelf } from '@/lib/shared';
+
+const APP_VERSION = '1.0.0';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
+  const chevron = mirrorStyle(locale);
 
   // The real artisan (P1-15): what the server says about the signed-in account, not placeholder text.
   const [artisan, setArtisan] = useState<ArtisanSelf | null>(null);
@@ -80,8 +87,8 @@ export default function ProfileScreen() {
   }
 
   const name = artisan?.user.name || null;
-  const since = memberSince(artisan?.user.createdAt);
-  const notice = artisan ? verificationNotice(artisan.verificationStatus) : null;
+  const since = memberSince(artisan?.user.createdAt, locale);
+  const notice = artisan ? verificationNotice(artisan.verificationStatus, locale) : null;
   const zones = (artisan?.serviceZones ?? []).filter((zone) => zone.isActive).map((zone) => zone.label || zone.city).filter(Boolean);
 
   return (
@@ -89,9 +96,9 @@ export default function ProfileScreen() {
 
       {failed && !artisan ? (
         <View style={styles.centerBox}>
-          <Text style={styles.errorText}>Impossible de charger votre profil. Vérifiez votre connexion.</Text>
+          <Text style={styles.errorText}>{t('app.profile.loadFailed')}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={load}>
-            <Text style={styles.retryText}>Réessayer</Text>
+            <Text style={styles.retryText}>{t('common.actions.retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : artisan ? (
@@ -102,23 +109,23 @@ export default function ProfileScreen() {
           <Text style={styles.avatarText}>{initialsOf(name).charAt(0)}</Text>
         </View>
         <Text style={styles.name}>{name ?? artisan.user.email}</Text>
-        <Text style={styles.role}>{tradesText(artisan)}</Text>
+        <Text style={[styles.role, { letterSpacing: spacing(locale, 1) }]}>{tradesText(artisan, locale)}</Text>
         
         <View style={styles.contactStack}>
           {artisan.user.phone ? (
             <View style={styles.contactRow}>
               <Ionicons name="call" size={16} color="#B69121" />
-              <Text style={styles.contactText}>{artisan.user.phone}</Text>
+              <Text style={[styles.contactText, styles.contactValue]}>{artisan.user.phone}</Text>
             </View>
           ) : null}
           <View style={styles.contactRow}>
             <Ionicons name="mail" size={16} color="#B69121" />
-            <Text style={styles.contactText}>{artisan.user.email}</Text>
+            <Text style={[styles.contactText, styles.contactValue]}>{artisan.user.email}</Text>
           </View>
           {since ? (
             <View style={styles.contactRow}>
               <Ionicons name="calendar" size={16} color="#B69121" />
-              <Text style={styles.contactText}>{`Membre depuis ${since}`}</Text>
+              <Text style={styles.contactText}>{t('app.profile.memberSince', { date: since })}</Text>
             </View>
           ) : null}
         </View>
@@ -136,70 +143,73 @@ export default function ProfileScreen() {
         <View style={styles.statBox}>
           <Ionicons name="star" size={24} color="#D4AF37" />
           <Text style={styles.statValue}>{ratingText(artisan.averageRating, artisan.ratingCount)}</Text>
-          <Text style={styles.statLabel}>{artisan.ratingCount > 0 ? `Note globale (${artisan.ratingCount})` : 'Pas encore de note'}</Text>
+          <Text style={styles.statLabel}>{artisan.ratingCount > 0 ? t('app.profile.rating', { count: artisan.ratingCount }) : t('app.profile.noRating')}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
           <Ionicons name="checkmark-done-circle" size={24} color="#D4AF37" />
           <Text style={styles.statValue}>{artisan.completedMissions}</Text>
-          <Text style={styles.statLabel}>Missions terminées</Text>
+          <Text style={styles.statLabel}>{t('app.profile.completedMissions')}</Text>
         </View>
       </View>
 
-      {zones.length ? <Text style={styles.zonesText}>{`Zones : ${zones.join(', ')}`}</Text> : null}
+      {zones.length ? <Text style={styles.zonesText}>{t('app.profile.zones', { zones: joinList(zones.map((zone) => isolateFor(locale, zone ?? '')), locale) })}</Text> : null}
         </>
       ) : null}
 
       {/* Action Menu */}
       <View style={styles.menuContainer}>
         <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
+          <View style={styles.menuItemStart}>
             <View style={styles.menuIconBox}>
               <Ionicons name="person-outline" size={20} color="#0f172a" />
             </View>
-            <Text style={styles.menuText}>Mes informations</Text>
+            <Text style={styles.menuText}>{t('app.profile.menu.info')}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#a8a29e" />
+          <Ionicons name="chevron-forward" size={20} color="#a8a29e" style={chevron} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
+          <View style={styles.menuItemStart}>
             <View style={styles.menuIconBox}>
               <Ionicons name="time-outline" size={20} color="#0f172a" />
             </View>
-            <Text style={styles.menuText}>Historique des interventions</Text>
+            <Text style={styles.menuText}>{t('app.profile.menu.history')}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#a8a29e" />
+          <Ionicons name="chevron-forward" size={20} color="#a8a29e" style={chevron} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/change-password')}>
-          <View style={styles.menuItemLeft}>
+          <View style={styles.menuItemStart}>
             <View style={styles.menuIconBox}>
               <Ionicons name="lock-closed-outline" size={20} color="#0f172a" />
             </View>
-            <Text style={styles.menuText}>Changer mon mot de passe</Text>
+            <Text style={styles.menuText}>{t('app.profile.menu.password')}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#a8a29e" />
+          <Ionicons name="chevron-forward" size={20} color="#a8a29e" style={chevron} />
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
+          <View style={styles.menuItemStart}>
             <View style={styles.menuIconBox}>
               <Ionicons name="help-buoy-outline" size={20} color="#0f172a" />
             </View>
-            <Text style={styles.menuText}>Support technique</Text>
+            <Text style={styles.menuText}>{t('app.profile.menu.support')}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#a8a29e" />
+          <Ionicons name="chevron-forward" size={20} color="#a8a29e" style={chevron} />
         </TouchableOpacity>
       </View>
+
+      {/* Language (P3-04): the two languages, each in its own letters */}
+      <LanguageSelector />
 
       {/* Logout Button */}
       <TouchableOpacity style={[styles.logoutButton, signingOut && { opacity: 0.6 }]} onPress={handleLogout} disabled={signingOut}>
         {signingOut ? <ActivityIndicator color="#ef4444" /> : <Ionicons name="log-out-outline" size={20} color="#ef4444" />}
-        <Text style={styles.logoutText}>Se déconnecter</Text>
+        <Text style={styles.logoutText}>{t('app.profile.signOut')}</Text>
       </TouchableOpacity>
       
-      <Text style={styles.versionText}>Smart Depannage Pro v1.0.0</Text>
+      <Text style={styles.versionText}>{t('app.profile.version', { version: APP_VERSION })}</Text>
 
     </ScrollView>
   );
@@ -255,7 +265,6 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginBottom: 16,
     textTransform: 'uppercase',
-    letterSpacing: 1,
   },
   contactStack: {
     gap: 8,
@@ -273,6 +282,10 @@ const styles = StyleSheet.create({
   contactText: {
     color: '#F3DFA2',
     fontWeight: '600',
+  },
+  // A phone number and an e-mail address keep their order inside a right-to-left screen.
+  contactValue: {
+    writingDirection: 'ltr',
   },
   noticeBox: {
     flexDirection: 'row',
@@ -369,7 +382,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f5f5f4',
   },
-  menuItemLeft: {
+  menuItemStart: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,

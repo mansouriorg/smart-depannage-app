@@ -2,7 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 
-import { AVAILABILITY_LABELS, type AvailabilityView } from '@/lib/shared';
+import { availabilityLabels, isolateFor, type AvailabilityView } from '@/lib/shared';
+import { useI18n } from '../services/i18n';
+import { spacing } from '../services/i18n-core';
 
 /**
  * Online or offline, for real (P1-15): the switch shows what the server says, and moves only when the server has
@@ -28,6 +30,7 @@ export function AvailabilityCard({
   /** Where the artisan was last put on the map: an address or coordinates. */
   where: string | null;
 }) {
+  const { t, locale } = useI18n();
   const on = view === 'online' || view === 'busy';
   const color = view === 'online' ? '#10b981' : view === 'busy' ? '#f59e0b' : '#94a3b8';
 
@@ -36,14 +39,14 @@ export function AvailabilityCard({
       <View style={styles.headerRow}>
         <View style={styles.titleRow}>
           <Ionicons name="navigate-circle" size={24} color="#D4AF37" />
-          <Text style={styles.title}>Ma disponibilité</Text>
+          <Text style={styles.title}>{t('app.availability.title')}</Text>
         </View>
 
         {view === null ? (
           failed ? null : <ActivityIndicator color="#D4AF37" />
         ) : (
           <View style={[styles.pill, { backgroundColor: on ? 'rgba(16, 185, 129, 0.2)' : 'rgba(100, 116, 139, 0.2)' }]}>
-            <Text style={[styles.pillText, { color }]}>{`${on ? '●' : '○'} ${AVAILABILITY_LABELS[view].toUpperCase()}`}</Text>
+            <Text style={[styles.pillText, { color, letterSpacing: spacing(locale, 0.5) }]}>{`${on ? '●' : '○'} ${availabilityLabels(locale)[view].toUpperCase()}`}</Text>
           </View>
         )}
       </View>
@@ -51,17 +54,17 @@ export function AvailabilityCard({
       <Text style={styles.subtitle}>
         {view === null
           ? failed
-            ? 'Impossible de lire votre disponibilité. Tirez l’écran vers le bas pour réessayer.'
-            : 'Chargement…'
+            ? t('app.availability.unreadable')
+            : t('app.availability.loading')
           : view === 'online'
-          ? 'Vous recevez les missions qui vous sont assignées.'
+          ? t('app.availability.online')
           : view === 'busy'
-            ? 'Vous êtes occupé : de nouvelles missions peuvent encore vous être assignées par l’équipe.'
-            : 'Vous êtes hors ligne : aucune mission ne vous sera assignée.'}
+            ? t('app.availability.busy')
+            : t('app.availability.offline')}
       </Text>
 
       <View style={styles.switchRow}>
-        <Text style={styles.switchLabel}>{view === null ? '—' : on ? 'Je suis disponible' : 'Je ne suis pas disponible'}</Text>
+        <Text style={styles.switchLabel}>{view === null ? '—' : on ? t('app.availability.available') : t('app.availability.notAvailable')}</Text>
         {busy ? (
           <ActivityIndicator color="#D4AF37" />
         ) : (
@@ -71,15 +74,16 @@ export function AvailabilityCard({
             disabled={view === null}
             trackColor={{ false: '#334155', true: 'rgba(16, 185, 129, 0.5)' }}
             thumbColor={on ? '#10b981' : '#cbd5e1'}
-            accessibilityLabel="Disponibilité"
+            accessibilityLabel={t('app.availability.switchLabel')}
           />
         )}
       </View>
 
       {on && where ? (
         <View style={styles.terminalBox}>
-          <Text style={styles.terminalLabel}>DERNIÈRE POSITION</Text>
-          <Text style={styles.whereText}>{where}</Text>
+          <Text style={styles.terminalLabel}>{t('app.availability.lastPosition')}</Text>
+          {/* coordinates keep their order inside a right-to-left screen; an address keeps the direction of its own letters */}
+          <Text style={styles.whereText}>{isolateFor(locale, where)}</Text>
         </View>
       ) : null}
 
@@ -89,8 +93,8 @@ export function AvailabilityCard({
             <ActivityIndicator color="#0f172a" />
           ) : (
             <>
-              <Ionicons name="refresh" size={20} color="#0f172a" style={{ marginRight: 8 }} />
-              <Text style={styles.buttonText}>Actualiser ma position</Text>
+              <Ionicons name="refresh" size={20} color="#0f172a" style={{ marginEnd: 8 }} />
+              <Text style={styles.buttonText}>{t('app.availability.refresh')}</Text>
             </>
           )}
         </TouchableOpacity>
@@ -137,7 +141,6 @@ const styles = StyleSheet.create({
   pillText: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
   },
   subtitle: {
     fontSize: 14,
@@ -164,8 +167,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: '#334155',
-    borderLeftWidth: 4,
-    borderLeftColor: '#D4AF37',
+    borderStartWidth: 4,
+    borderStartColor: '#D4AF37',
   },
   terminalLabel: {
     color: '#64748b',

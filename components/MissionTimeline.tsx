@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { missionTimeline, type MissionMoments } from '@/lib/shared';
 import { clockTime, shortDate } from '../services/display';
+import { useI18n } from '../services/i18n';
 
 /**
  * The line of a mission (P1-15): each step the artisan does, with the moment the server recorded it. What is
@@ -11,7 +12,8 @@ import { clockTime, shortDate } from '../services/display';
  * the app and the status table cannot disagree on what a mission is made of.
  */
 export function MissionTimeline({ job }: { job: MissionMoments }) {
-  const steps = missionTimeline(job);
+  const { locale } = useI18n();
+  const steps = missionTimeline(job, locale);
 
   return (
     <View>
@@ -30,7 +32,7 @@ export function MissionTimeline({ job }: { job: MissionMoments }) {
 
             <View style={styles.text}>
               <Text style={[styles.label, { color: step.done ? '#e2e8f0' : step.current ? '#D4AF37' : '#64748b' }]}>{step.label}</Text>
-              {step.at ? <Text style={styles.time}>{`${shortDate(step.at)} · ${clockTime(step.at)}`}</Text> : null}
+              {step.at ? <Text style={styles.time}>{`${shortDate(step.at, locale)} · ${clockTime(step.at, locale)}`}</Text> : null}
             </View>
           </View>
         );

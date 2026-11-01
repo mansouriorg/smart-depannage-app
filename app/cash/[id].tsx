@@ -16,6 +16,8 @@ import {
 } from 'react-native';
 
 import { call } from '../../services/call';
+import { useI18n } from '../../services/i18n';
+import { mirrorStyle, spacing } from '../../services/i18n-core';
 import { collectFailure } from '../../services/money-screens';
 // 🧩 What is left to take, what the artisan typed, the key of the tap and the words after it (P2-05)
 import {
@@ -50,6 +52,7 @@ function callCollect(job: string, millimes: number, requestKey: string, note: st
 
 export default function CashScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
   // A link can carry anything in its address: only a job number is looked up.
@@ -72,6 +75,12 @@ export default function CashScreen() {
   // The newest read of the position wins: an older answer that comes back late is dropped.
   const asked = useRef(0);
   const navigation = useNavigation();
+  // The words in the language of the moment, for the reading below, which must not start again when the language changes.
+  const said = useRef({ t, locale });
+
+  useEffect(() => {
+    said.current = { t, locale };
+  });
 
   const leave = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -85,7 +94,7 @@ export default function CashScreen() {
       const wanted = id;
 
       if (!wanted) {
-        setFailure('Ce lien ne correspond à aucune de vos missions.');
+        setFailure(said.current.t('app.common.missionLinkInvalid'));
         setLoading(false);
         return;
       }
@@ -102,7 +111,7 @@ export default function CashScreen() {
       } catch (error) {
         if (onScreen.current !== wanted || asked.current !== mine || quiet) return;
 
-        setFailure(apiErrorMessage(error, 'Impossible de charger le montant à encaisser. Vérifiez votre connexion et réessayez.'));
+        setFailure(apiErrorMessage(error, said.current.t('app.cash.loadFailed')));
       } finally {
         if (onScreen.current === wanted && asked.current === mine) setLoading(false);
       }
@@ -147,26 +156,26 @@ export default function CashScreen() {
     [navigation],
   );
 
-  const read = position ? readCashAmount(amount, position) : null;
+  const read = position ? readCashAmount(amount, position, locale) : null;
 
   const submit = () => {
     if (working.current || finished.current || !position || !position.canCollect) return;
 
-    const checked = readCashAmount(amount, position);
+    const checked = readCashAmount(amount, position, locale);
 
     if (!checked.ok) {
       setShowProblem(true);
-      Alert.alert('Montant à vérifier', checked.message);
+      Alert.alert(t('app.cash.checkAmountTitle'), checked.message);
       return;
     }
 
     Alert.alert(
-      'Confirmer l’encaissement',
-      `Vous confirmez avoir reçu ${formatMillimes(checked.millimes)} en espèces du client ?\n\nVous gardez les espèces. La commission de la plateforme sur ce montant est ajoutée à ce que vous lui devez.`,
+      t('app.cash.confirmTitle'),
+      t('app.cash.confirmMessage', { amount: formatMillimes(checked.millimes, undefined, locale) }),
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.actions.cancel'), style: 'cancel' },
         {
-          text: 'Confirmer',
+          text: t('common.actions.confirm'),
           onPress: () => {
             void collect(checked.millimes);
           },
@@ -196,9 +205,9 @@ export default function CashScreen() {
         working.current = false;
         setSending(false);
 
-        const failed = collectFailure(error);
+        const failed = collectFailure(error, locale);
 
-        Alert.alert('Erreur', failed.message);
+        Alert.alert(t('common.states.error'), failed.message);
 
         // Whatever went wrong, what is left to take may not be what is on the screen (a first try that was lost may have been
         // written): look again, quietly, the failure was told already.
@@ -216,23 +225,23 @@ export default function CashScreen() {
     working.current = false;
     setSending(false);
 
-    let words = 'L’encaissement est enregistré.';
+    let words = t('app.cash.recordedDefault');
 
     try {
-      words = collectedWords(answer);
+      words = collectedWords(answer, locale);
     } catch {
       // an answer that cannot be read is still an answer: the cash is recorded
     }
 
-    Alert.alert('Encaissement enregistré', words, [{ text: 'OK', onPress: leave }]);
+    Alert.alert(t('app.cash.recordedTitle'), words, [{ text: t('common.actions.ok'), onPress: leave }]);
   };
 
   const header = (
     <View style={styles.header}>
-      <TouchableOpacity onPress={leave} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Retour" disabled={sending}>
-        <Ionicons name="arrow-back" size={24} color="#D4AF37" />
+      <TouchableOpacity onPress={leave} style={styles.backButton} accessibilityRole="button" accessibilityLabel={t('common.actions.back')} disabled={sending}>
+        <Ionicons name="arrow-back" size={24} color="#D4AF37" style={mirrorStyle(locale)} />
       </TouchableOpacity>
-      <Text style={styles.headerTitle}>Encaissement · #{id}</Text>
+      <Text style={styles.headerTitle}>{t('app.cash.header', { ref: `#${id}` })}</Text>
       <View style={{ width: 40 }} />
     </View>
   );
@@ -253,7 +262,7 @@ export default function CashScreen() {
         {header}
         <View style={styles.blocked}>
           <Ionicons name="information-circle-outline" size={40} color="#94a3b8" />
-          <Text style={styles.blockedText}>{failure ?? 'Impossible de charger le montant à encaisser.'}</Text>
+          <Text style={styles.blockedText}>{failure ?? t('app.cash.loadFailedShort')}</Text>
           <TouchableOpacity
             style={styles.secondary}
             onPress={() => {
@@ -261,13 +270,15 @@ export default function CashScreen() {
               void load(false);
             }}
           >
-            <Text style={styles.secondaryText}>Réessayer</Text>
+            <Text style={styles.secondaryText}>{t('common.actions.retry')}</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // Spaced-out headings are for Latin letters: the letters of an Arabic word are joined.
+  const spaced = { letterSpacing: spacing(locale, 1) };
   const remainingMillimes = position.remaining !== null ? Math.max(toMillimes(position.remaining), 0) : 0;
   const problem = showProblem && read && !read.ok ? read.message : null;
 
@@ -280,60 +291,58 @@ export default function CashScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         {position.total !== null && position.remaining !== null ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>CE QUE LE CLIENT DOIT</Text>
+            <Text style={[styles.cardTitle, spaced]}>{t('app.cash.owedTitle')}</Text>
             <View style={styles.figures}>
-              <Row label={position.document === 'INVOICE' ? 'Facture' : 'Devis accepté'} value={formatDinars(position.total)} />
-              <Row label="Déjà payé" value={formatDinars(position.received)} />
-              <Row label="Reste à payer" value={formatDinars(Math.max(position.remaining, 0))} strong />
+              <Row label={position.document === 'INVOICE' ? t('app.cash.invoice') : t('app.cash.acceptedQuote')} value={formatDinars(position.total, undefined, locale)} />
+              <Row label={t('app.cash.alreadyPaid')} value={formatDinars(position.received, undefined, locale)} />
+              <Row label={t('app.cash.remaining')} value={formatDinars(Math.max(position.remaining, 0), undefined, locale)} strong />
             </View>
-            {position.collected > 0 ? <Text style={styles.hint}>Vous avez déjà déclaré {formatDinars(position.collected)} en espèces sur cette mission.</Text> : null}
+            {position.collected > 0 ? <Text style={styles.hint}>{t('app.cash.declared', { amount: formatDinars(position.collected, undefined, locale) })}</Text> : null}
           </View>
         ) : null}
 
         {position.canCollect ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>MONTANT REÇU EN ESPÈCES (DT)</Text>
+            <Text style={[styles.cardTitle, spaced]}>{t('app.cash.amountTitle')}</Text>
             <TextInput
-              style={[styles.input, problem ? styles.inputBad : null]}
+              style={[styles.input, styles.ltr, problem ? styles.inputBad : null]}
               value={amount}
               onChangeText={setAmount}
               keyboardType="decimal-pad"
               placeholder="0,000"
               placeholderTextColor="#64748b"
               editable={!sending}
-              accessibilityLabel="Montant reçu en espèces"
+              accessibilityLabel={t('app.cash.amountAccessibility')}
             />
             {problem ? <Text style={styles.error}>{problem}</Text> : null}
 
             <TouchableOpacity style={[styles.secondary, sending && styles.disabled]} onPress={() => setAmount(amountText(remainingMillimes))} disabled={sending}>
               <Ionicons name="cash-outline" size={18} color="#D4AF37" />
-              <Text style={styles.secondaryText}>Tout le reste ({formatMillimes(remainingMillimes)})</Text>
+              <Text style={styles.secondaryText}>{t('app.cash.allRemaining', { amount: formatMillimes(remainingMillimes, undefined, locale) })}</Text>
             </TouchableOpacity>
 
-            <Text style={[styles.cardTitle, { marginTop: 8 }]}>NOTE (FACULTATIF)</Text>
+            <Text style={[styles.cardTitle, spaced, { marginTop: 8 }]}>{t('app.cash.noteTitle')}</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
               value={note}
               onChangeText={setNote}
-              placeholder="Un mot pour l’équipe"
+              placeholder={t('app.cash.notePlaceholder')}
               placeholderTextColor="#64748b"
               multiline
               maxLength={NOTE_MAX}
               editable={!sending}
-              accessibilityLabel="Note facultative pour l’équipe"
+              accessibilityLabel={t('app.cash.noteAccessibility')}
             />
 
-            <Text style={styles.hint}>
-              Vous gardez les espèces. Une commission est ajoutée à ce que vous devez à la plateforme : vous la retrouvez dans l’onglet Gains.
-            </Text>
+            <Text style={styles.hint}>{t('app.cash.hint')}</Text>
 
             <TouchableOpacity style={[styles.primary, sending && styles.disabled]} onPress={submit} disabled={sending} accessibilityRole="button">
               {sending ? (
                 <ActivityIndicator color="#0f172a" />
               ) : (
                 <>
-                  <Text style={styles.primaryText}>Enregistrer l’encaissement</Text>
-                  <Ionicons name="checkmark-circle" size={20} color="#0f172a" style={{ marginLeft: 8 }} />
+                  <Text style={styles.primaryText}>{t('app.cash.submit')}</Text>
+                  <Ionicons name="checkmark-circle" size={20} color="#0f172a" style={{ marginStart: 8 }} />
                 </>
               )}
             </TouchableOpacity>
@@ -342,7 +351,7 @@ export default function CashScreen() {
           <View style={styles.card}>
             <View style={styles.statusRow}>
               <Ionicons name={position.remaining !== null && position.remaining <= 0 ? 'checkmark-circle' : 'information-circle-outline'} size={22} color={position.remaining !== null && position.remaining <= 0 ? '#10b981' : '#94a3b8'} />
-              <Text style={styles.reason}>{position.reason ?? 'Aucun encaissement possible pour le moment.'}</Text>
+              <Text style={styles.reason}>{position.reason ?? t('app.cash.none')}</Text>
             </View>
           </View>
         )}
@@ -384,11 +393,12 @@ const styles = StyleSheet.create({
   blockedText: { color: '#cbd5e1', fontSize: 16, lineHeight: 24, textAlign: 'center' },
 
   card: { backgroundColor: '#1e293b', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#334155', gap: 12 },
-  cardTitle: { fontSize: 12, color: '#D4AF37', fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
+  cardTitle: { fontSize: 12, color: '#D4AF37', fontWeight: '800', textTransform: 'uppercase' },
   figures: { backgroundColor: '#0f172a', borderRadius: 14, padding: 14, gap: 8, borderWidth: 1, borderColor: '#334155' },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   label: { color: '#94a3b8', fontSize: 14, flexShrink: 1 },
-  value: { color: '#e2e8f0', fontSize: 15, fontWeight: '600' },
+  // An amount is read left to right, in French and in Arabic.
+  value: { color: '#e2e8f0', fontSize: 15, fontWeight: '600', writingDirection: 'ltr' },
   strong: { color: '#fff', fontSize: 17, fontWeight: 'bold' },
   hint: { color: '#94a3b8', fontSize: 13, lineHeight: 19 },
   error: { color: '#f87171', fontSize: 13, lineHeight: 18 },
@@ -408,6 +418,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   inputBad: { borderColor: '#ef4444' },
+  // An amount is typed with digits, left to right.
+  ltr: { writingDirection: 'ltr' },
   multiline: { minHeight: 72, fontSize: 16, fontWeight: '400', textAlignVertical: 'top' },
 
   secondary: {

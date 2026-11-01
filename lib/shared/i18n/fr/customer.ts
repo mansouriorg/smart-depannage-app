@@ -1,0 +1,90 @@
+/**
+ * What a customer does from the tracking link alone: read the quote and answer it, choose how to pay, read and keep the invoice.
+ * {moment} and {day} are dates written by the caller ("24 octobre 2026 à 14 h 05"); {amount} is an amount with its unit.
+ */
+export const customer = {
+  quote: {
+    closedJob: 'Cette mission n’accepte plus de réponse sur ses devis.',
+    toAnswer: 'Un devis vous attend : acceptez-le, posez une question ou demandez une modification.',
+    beingChanged: 'Vous avez demandé une modification : le technicien modifie le devis, vous pourrez l’accepter dès qu’il vous sera renvoyé.',
+    accepted: 'Vous avez accepté ce devis.',
+    refused: 'Ce devis a été refusé.',
+    cancelled: 'Ce devis a été annulé.',
+    // « Un problème ? » is the name of the block of the page where the customer writes to the team: the website uses the same words.
+    expired: 'Ce devis a expiré. Pour en obtenir un nouveau, écrivez-nous dans « Un problème ? » plus bas sur cette page.',
+    expiredOn: 'Ce devis a expiré le {moment}.',
+    expiredHint: 'Vous ne pouvez plus l’accepter : demandez-en un nouveau ou posez une question.',
+    validUntil: 'Valable jusqu’au {moment}',
+    expiredSince: 'Expiré depuis le {moment}',
+    noteRequired: 'Écrivez votre question ou votre demande.',
+    noteLong: 'Votre message est trop long ({max} au plus).',
+  },
+  payment: {
+    unavailable: 'Le paiement n’est pas disponible pour le moment.',
+    cardUnprepared: 'Le paiement par carte n’a pas pu être préparé. Réessayez, ou choisissez un autre mode de paiement.',
+    cardLapsed: 'Le délai pour payer par carte est dépassé. Si vous venez de payer, la confirmation arrive dans un instant ; sinon, relancez un paiement par carte.',
+    cardReview: 'Votre paiement par carte est en cours de vérification par notre équipe. Vous n’avez rien à refaire.',
+    cardGoToProvider: 'Continuer vers le paiement',
+    cardTryAgain: 'Réessayer le paiement par carte',
+    cardChecking: 'Nous vérifions votre paiement…',
+    cardWaiting: 'Paiement de {amount} par carte en attente. Réglez sur la page sécurisée du prestataire ; si vous avez déjà payé, la confirmation arrive dans un instant.',
+    cardWaitingUntil: 'Paiement de {amount} par carte en attente, à terminer avant {time}. Réglez sur la page sécurisée du prestataire ; si vous avez déjà payé, la confirmation arrive dans un instant.',
+    transferWaiting: 'Virement de {amount} en attente de confirmation. Notre équipe le confirmera dès réception.',
+    transferAsked: 'Virement de {amount} demandé. Une fois fait, envoyez-nous sa référence : notre équipe confirmera la réception.',
+    cashWaiting: 'Paiement de {amount} en espèces en attente de confirmation par notre équipe. Si vous n’avez pas encore remis la somme, remettez-la au technicien.',
+    otherWaiting: 'Paiement de {amount} en attente de confirmation.',
+    paid: 'Le paiement de {amount} est enregistré. Merci.',
+    remaining: 'Il reste {amount} à payer. Choisissez comment vous payez.',
+    choose: 'Choisissez comment vous payez.',
+    referenceRequired: 'Indiquez la référence de votre virement.',
+    referenceLong: 'La référence est trop longue ({max} au plus).',
+    choices: {
+      CASH: {
+        title: 'Espèces',
+        detail: 'Vous remettez la somme au technicien. Notre équipe confirme la réception.',
+      },
+      BANK_TRANSFER: {
+        title: 'Virement bancaire',
+        detail: 'Vous virez la somme sur le compte de l’entreprise, puis vous nous envoyez la référence du virement.',
+      },
+      ONLINE_CARD: {
+        title: 'Carte bancaire',
+        detail: 'Vous payez sur la page sécurisée de notre prestataire de paiement. La confirmation est automatique.',
+      },
+    },
+    methods: {
+      cash: 'Espèces',
+      transfer: 'Virement',
+      card: 'Carte',
+    },
+    statuses: {
+      awaitingConfirmation: 'En attente de confirmation',
+      awaitingPayment: 'En attente de paiement',
+      received: 'Reçu',
+      partlyRefunded: 'Remboursé en partie',
+      refunded: 'Remboursé',
+      failed: 'Échoué',
+    },
+  },
+  returns: {
+    paid: 'Paiement reçu. Merci !',
+    waiting: 'Votre paiement n’est pas encore confirmé. Si vous l’avez effectué, cela peut prendre un instant : cette page se met à jour toute seule. Si vous y avez renoncé, reprenez-le depuis le suivi de votre demande.',
+    failed: 'Aucun paiement par carte n’est en attente pour cette demande. Si votre carte a pourtant été débitée, ne payez pas une seconde fois : le suivi de votre demande montre ce qui est enregistré, et notre équipe vérifie. Vous pouvez aussi réessayer depuis ce suivi.',
+    unknown: 'Nous n’avons pas pu vérifier votre paiement pour le moment. Rouvrez le suivi de votre demande dans quelques instants.',
+    lost: 'Nous n’avons pas retrouvé votre demande dans ce navigateur. Si vous avez payé, votre paiement est pris en compte dès que le prestataire nous le confirme. Pour suivre votre demande, ouvrez son suivi avec le lien que nous vous avons envoyé.',
+    tooLong: 'Nous n’avons pas encore reçu la confirmation de votre banque. Si vous avez payé, elle arrivera : retrouvez-la dans le suivi de votre demande.',
+  },
+  invoice: {
+    title: 'Facture {number}',
+    cancelled: 'Facture annulée',
+    paid: 'Payée',
+    paidOn: 'Payée le {day}',
+    toPay: 'À payer',
+    issuedOn: 'Émise le {day}',
+    creditNoteIssuedOn: 'Émis le {day}',
+    totalToPay: 'Total à payer',
+    totalBilled: 'Total facturé',
+    netToPay: 'Net à payer',
+    netOfInvoice: 'Net de la facture',
+  },
+} as const;

@@ -1,4 +1,4 @@
-import { routes, type ArtisanIntervention, type BoardIntervention, type MissionRejectionReason, type MissionStep, type RouteSpec } from '../lib/shared';
+import { message, routes, type ArtisanIntervention, type BoardIntervention, type Locale, type MissionRejectionReason, type MissionStep, type RouteSpec } from '../lib/shared';
 
 /** The steps that are a plain call. The last one, `complete`, is closed with a photo (see ProofOfWorkCamera). */
 export type PlainStep = Exclude<MissionStep, 'complete'>;
@@ -18,12 +18,18 @@ export function stepRoute(step: PlainStep, id: number | string): RouteSpec<Artis
 }
 
 /** What the artisan is told when a step failed and the server gave no sentence of its own. */
-export const STEP_FAILURE: Record<PlainStep, string> = {
-  accept: 'La mission n’a pas pu être acceptée. Réessayez.',
-  'on-the-way': 'Le départ n’a pas pu être enregistré. Réessayez.',
-  arrived: 'L’arrivée n’a pas pu être enregistrée. Réessayez.',
-  start: 'Le début des travaux n’a pas pu être enregistré. Réessayez.',
-};
+export function stepFailure(step: PlainStep, locale: Locale): string {
+  switch (step) {
+    case 'accept':
+      return message(locale, 'app.mission.stepFailed.accept');
+    case 'on-the-way':
+      return message(locale, 'app.mission.stepFailed.onTheWay');
+    case 'arrived':
+      return message(locale, 'app.mission.stepFailed.arrived');
+    case 'start':
+      return message(locale, 'app.mission.stepFailed.start');
+  }
+}
 
 /**
  * GET /interventions/:id answers with the artisan's own copy of a job that is theirs, and with the board's copy (no
@@ -44,32 +50,32 @@ export function withAnswer(job: ArtisanIntervention, answer: Partial<ArtisanInte
 }
 
 /** The sentence under the status: what the job waits for. */
-export function waitingFor(status: string | null | undefined): string | null {
+export function waitingFor(status: string | null | undefined, locale: Locale): string | null {
   switch (status) {
     case 'ASSIGNED':
-      return 'Cette mission vous a été assignée. Acceptez-la ou refusez-la.';
+      return message(locale, 'app.mission.waiting.assigned');
     case 'ARTISAN_ACCEPTED':
     case 'ACCEPTED':
-      return 'Mission acceptée. Partez vers le client quand vous êtes prêt.';
+      return message(locale, 'app.mission.waiting.accepted');
     case 'ARTISAN_ON_THE_WAY':
     case 'ON_THE_WAY':
-      return 'Le client sait que vous êtes en route.';
+      return message(locale, 'app.mission.waiting.onTheWay');
     case 'ARTISAN_ARRIVED':
     case 'ARRIVED':
-      return 'Vous êtes sur place. Commencez les travaux.';
+      return message(locale, 'app.mission.waiting.arrived');
     case 'IN_PROGRESS':
-      return 'Travaux en cours. Terminez avec une photo de preuve.';
+      return message(locale, 'app.mission.waiting.inProgress');
     case 'WAITING_CLIENT_VALIDATION':
     case 'COMPLETED':
     case 'PAYMENT_PENDING':
     case 'PAID':
     case 'INVOICE_READY':
     case 'INVOICE_SENT':
-      return 'Mission terminée.';
+      return message(locale, 'app.mission.waiting.done');
     case 'CANCELLED':
-      return 'Cette mission a été annulée.';
+      return message(locale, 'app.mission.waiting.cancelled');
     case 'DISPUTED':
-      return 'Cette mission est en litige : l’équipe vous contactera.';
+      return message(locale, 'app.mission.waiting.disputed');
     default:
       return null;
   }

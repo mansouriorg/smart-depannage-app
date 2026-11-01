@@ -18,10 +18,12 @@ import {
 // ✅ Import API
 import api, { UPLOAD_TIMEOUT_MS, apiErrorMessage } from '../../services/api';
 import { call } from '../../services/call';
+import { useI18n } from '../../services/i18n';
+import { mirrorStyle, spacing } from '../../services/i18n-core';
 import {
-  STEP_FAILURE,
   declineBody,
   isOwnMission,
+  stepFailure,
   stepRoute,
   waitingFor,
   withAnswer,
@@ -44,7 +46,7 @@ import {
   nextMissionStep,
   recordIdOf,
   routes,
-  serviceNameOf,
+  serviceName,
   type ArtisanIntervention,
   type CashPosition,
   type MissionRejectionReason,
@@ -62,6 +64,7 @@ const STEP_ICONS: Record<MissionStep, keyof typeof Ionicons.glyphMap> = {
 
 export default function MissionDetailScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const params = useLocalSearchParams<{ id?: string | string[] }>();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
   // A link can carry anything in its address (a path, a number too large): only a job number is looked up.
@@ -127,7 +130,7 @@ export default function MissionDetailScreen() {
       const wanted = id;
 
       if (!wanted) {
-        Alert.alert('Mission introuvable', 'Ce lien ne correspond à aucune de vos missions.');
+        Alert.alert(t('app.mission.notFoundTitle'), t('app.common.missionLinkInvalid'));
         setLoading(false);
         leave();
         return;
@@ -145,7 +148,7 @@ export default function MissionDetailScreen() {
 
         // The board's copy comes back for a job nobody holds: it is no longer this artisan's.
         if (!isOwnMission(job)) {
-          if (mode !== 'recheck') Alert.alert('Mission indisponible', 'Cette mission ne vous est plus attribuée.');
+          if (mode !== 'recheck') Alert.alert(t('app.mission.unavailableTitle'), t('app.mission.notYours'));
           leave();
           return;
         }
@@ -158,7 +161,7 @@ export default function MissionDetailScreen() {
 
         if (mode === 'recheck') return;
 
-        Alert.alert("Erreur", apiErrorMessage(error, mode === 'open' ? "Impossible de charger les détails." : "Impossible d'actualiser la mission."));
+        Alert.alert(t('common.states.error'), apiErrorMessage(error, mode === 'open' ? t('app.mission.loadDetailsFailed') : t('app.mission.refreshFailed')));
 
         if (mode === 'open') leave();
       } finally {
@@ -168,7 +171,7 @@ export default function MissionDetailScreen() {
         }
       }
     },
-    [id, leave, loadPosition],
+    [id, leave, loadPosition, t],
   );
 
   // The effect below must not start again because `load` was made again: it follows the mission, nothing else.
@@ -237,7 +240,7 @@ export default function MissionDetailScreen() {
   const openNavigation = async () => {
     if (!mission || !point) return;
 
-    const links = navigationLinks(point, `Mission #${mission.id}`);
+    const links = navigationLinks(point, t('app.mission.mapLabel', { ref: `#${mission.id}` }));
     const first = Platform.select({ ios: links.apple, android: links.geo, default: links.google });
 
     try {
@@ -246,7 +249,7 @@ export default function MissionDetailScreen() {
       try {
         await Linking.openURL(links.google);
       } catch {
-        Alert.alert("Navigation", "Aucune application de cartes n'a pu être ouverte.");
+        Alert.alert(t('app.mission.navigationTitle'), t('app.mission.noMapApp'));
       }
     }
   };
@@ -256,7 +259,7 @@ export default function MissionDetailScreen() {
     if (mission?.client?.phone) {
       Linking.openURL(`tel:${mission.client.phone}`);
     } else {
-      Alert.alert("Info", "Pas de numéro de téléphone disponible.");
+      Alert.alert(t('app.mission.infoTitle'), t('app.mission.noPhone'));
     }
   };
 
@@ -273,7 +276,7 @@ export default function MissionDetailScreen() {
       await work();
     } catch (error) {
       console.error("Mission action error:", apiErrorStatus(error) ?? (error as Error)?.message);
-      Alert.alert("Erreur", apiErrorMessage(error, failure));
+      Alert.alert(t('common.states.error'), apiErrorMessage(error, failure));
 
       // The server answered "no": the job may have moved (cancelled, handed to somebody else). Look again.
       if (apiErrorStatus(error) !== null) loadNow.current('recheck');
@@ -292,7 +295,7 @@ export default function MissionDetailScreen() {
       const answer = await call(stepRoute(step, wanted));
 
       if (onScreen.current === wanted) setMission((prev) => (prev ? withAnswer(prev, answer) : prev));
-    }, STEP_FAILURE[step]);
+    }, stepFailure(step, locale));
 
   // 5. Refuse, or give back: the reason goes to the dispatcher, the mission goes back to the queue
   const decline = (reason: MissionRejectionReason, note: string) =>
@@ -305,8 +308,8 @@ export default function MissionDetailScreen() {
       // still closing can be lost on an iPhone. The word comes a moment later, on the screen they land on.
       setDeclining(false);
       leave();
-      setTimeout(() => Alert.alert("Mission rendue", "L'équipe a été prévenue et va chercher un autre technicien."), 400);
-    }, "La mission n'a pas pu être rendue. Réessayez.");
+      setTimeout(() => Alert.alert(t('app.mission.returnedTitle'), t('app.mission.returnedMessage')), 400);
+    }, t('app.mission.returnFailed'));
 
   // 6. 📸 Envoi de la preuve de travail (photo, GPS et heure venant de la caméra)
   const handlePhotoCapture = async (proofData: any) => {
@@ -342,10 +345,8 @@ export default function MissionDetailScreen() {
       const checked = response.data?.proof?.status === 'NEEDS_REVIEW';
 
       Alert.alert(
-        "Félicitations !",
-        checked
-          ? "Mission terminée. Votre photo sera vérifiée par l'équipe."
-          : "Mission terminée et preuve sécurisée enregistrée.",
+        t('app.mission.doneTitle'),
+        checked ? t('app.mission.doneReview') : t('app.mission.doneSecured'),
       );
 
       leave();
@@ -355,15 +356,15 @@ export default function MissionDetailScreen() {
 
       // Le serveur dit quoi faire ("rapprochez-vous du lieu", "prenez une nouvelle photo"...).
       const refused = error?.response?.status === 400 && error?.response?.data?.code === 'PROOF_REJECTED';
-      const message = apiErrorMessage(error, "La preuve n'a pas pu être envoyée. Veuillez réessayer.");
+      const message = apiErrorMessage(error, t('app.mission.proofFailed'));
 
       if (refused) {
-        Alert.alert("Photo refusée", message, [
-          { text: "Annuler", style: "cancel" },
-          { text: "Reprendre la photo", onPress: () => setShowCamera(true) },
+        Alert.alert(t('app.mission.photoRefusedTitle'), message, [
+          { text: t('common.actions.cancel'), style: "cancel" },
+          { text: t('app.mission.retakePhoto'), onPress: () => setShowCamera(true) },
         ]);
       } else {
-        Alert.alert("Erreur", message);
+        Alert.alert(t('common.states.error'), message);
 
         // The job may have been closed by a first try whose answer got lost: look again.
         if (apiErrorStatus(error) !== null) loadNow.current('recheck');
@@ -398,9 +399,9 @@ export default function MissionDetailScreen() {
     );
   }
 
-  const next = nextMissionStep(mission.status);
-  const refusal = missionRefusal(mission.status);
-  const hint = waitingFor(mission.status);
+  const next = nextMissionStep(mission.status, undefined, locale);
+  const refusal = missionRefusal(mission.status, locale);
+  const hint = waitingFor(mission.status, locale);
   const over = missionBucketOf(mission.status) === 'done';
 
   return (
@@ -409,10 +410,10 @@ export default function MissionDetailScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={leave} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#D4AF37" />
+        <TouchableOpacity onPress={leave} style={styles.backButton} accessibilityRole="button" accessibilityLabel={t('common.actions.back')}>
+          <Ionicons name="arrow-back" size={24} color="#D4AF37" style={mirrorStyle(locale)} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Détails Mission #{id}</Text>
+        <Text style={styles.headerTitle}>{t('app.mission.header', { ref: `#${id}` })}</Text>
         <View style={{ width: 40 }} /> 
       </View>
 
@@ -439,13 +440,13 @@ export default function MissionDetailScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <Ionicons name="person" size={20} color="#D4AF37" />
-            <Text style={styles.cardTitle}>CLIENT</Text>
+            <Text style={[styles.cardTitle, { letterSpacing: spacing(locale, 1) }]}>{t('app.mission.client')}</Text>
           </View>
           
           <View style={styles.rowBetween}>
             <View>
-              <Text style={styles.clientName}>{mission.client?.name || "Client Inconnu"}</Text>
-              <Text style={styles.clientPhone}>{mission.client?.phone || "Non renseigné"}</Text>
+              <Text style={styles.clientName}>{mission.client?.name || t('app.common.unknownClient')}</Text>
+              <Text style={[styles.clientPhone, mission.client?.phone ? styles.ltr : null]}>{mission.client?.phone || t('app.mission.notProvided')}</Text>
             </View>
             <TouchableOpacity onPress={callClient} style={styles.callButton}>
               <Ionicons name="call" size={24} color="#0f172a" />
@@ -456,33 +457,33 @@ export default function MissionDetailScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
              <Ionicons name="construct" size={20} color="#D4AF37" />
-             <Text style={styles.cardTitle}>SERVICE</Text>
+             <Text style={[styles.cardTitle, { letterSpacing: spacing(locale, 1) }]}>{t('app.mission.service')}</Text>
           </View>
-          <Text style={styles.serviceText}>{serviceNameOf(mission.serviceType)}</Text>
+          <Text style={styles.serviceText}>{serviceName(mission.serviceType, locale)}</Text>
           
           <View style={styles.divider} />
           
           <View style={styles.cardHeaderRow}>
              <Ionicons name="document-text" size={20} color="#D4AF37" />
-             <Text style={styles.cardTitle}>DESCRIPTION</Text>
+             <Text style={[styles.cardTitle, { letterSpacing: spacing(locale, 1) }]}>{t('app.mission.description')}</Text>
           </View>
-          <Text style={styles.bodyText}>{mission.description || "Aucune description fournie."}</Text>
+          <Text style={styles.bodyText}>{mission.description || t('app.mission.noDescription')}</Text>
 
           <View style={styles.divider} />
 
           <View style={styles.cardHeaderRow}>
              <Ionicons name="location" size={20} color="#D4AF37" />
-             <Text style={styles.cardTitle}>ADRESSE</Text>
+             <Text style={[styles.cardTitle, { letterSpacing: spacing(locale, 1) }]}>{t('app.mission.address')}</Text>
           </View>
           <Text style={styles.addressText}>{mission.address}</Text>
 
           {point ? (
             <TouchableOpacity onPress={openNavigation} style={styles.routeButton} accessibilityRole="button">
               <Ionicons name="navigate" size={18} color="#D4AF37" />
-              <Text style={styles.routeButtonText}>Itinéraire vers le lieu</Text>
+              <Text style={styles.routeButtonText}>{t('app.mission.route')}</Text>
             </TouchableOpacity>
           ) : (
-            <Text style={styles.noPointText}>La position GPS de ce lieu n'est pas enregistrée : suivez l'adresse ci-dessus.</Text>
+            <Text style={styles.noPointText}>{t('app.mission.noPoint')}</Text>
           )}
         </View>
 
@@ -501,7 +502,7 @@ export default function MissionDetailScreen() {
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
             <Ionicons name="git-commit" size={20} color="#D4AF37" />
-            <Text style={styles.cardTitle}>DÉROULEMENT</Text>
+            <Text style={[styles.cardTitle, { letterSpacing: spacing(locale, 1) }]}>{t('app.mission.timeline')}</Text>
           </View>
           <MissionTimeline job={mission} />
         </View>
@@ -518,7 +519,7 @@ export default function MissionDetailScreen() {
                   onPress={() => (next.step === 'complete' ? setShowCamera(true) : runStep(next.step))}
                 >
                   <Text style={next.needsProof ? styles.successButtonText : styles.primaryButtonText}>{next.label}</Text>
-                  <Ionicons name={STEP_ICONS[next.step]} size={20} color={next.needsProof ? '#fff' : '#0f172a'} style={{marginLeft: 8}}/>
+                  <Ionicons name={STEP_ICONS[next.step]} size={20} color={next.needsProof ? '#fff' : '#0f172a'} style={{ marginStart: 8 }}/>
                 </TouchableOpacity>
               )}
 
@@ -531,7 +532,7 @@ export default function MissionDetailScreen() {
               {over && (
                 <View style={styles.completedBox}>
                   <Ionicons name="checkmark-done-circle" size={64} color="#10b981" />
-                  <Text style={styles.completedText}>Mission Terminée</Text>
+                  <Text style={styles.completedText}>{t('app.mission.over')}</Text>
                 </View>
               )}
             </>
@@ -542,7 +543,7 @@ export default function MissionDetailScreen() {
 
       <DeclineModal
         visible={declining}
-        question={refusal?.question ?? 'Pourquoi rendez-vous cette mission ?'}
+        question={refusal?.question ?? t('app.decline.question')}
         busy={actionLoading}
         onCancel={() => setDeclining(false)}
         onConfirm={decline}
@@ -627,7 +628,6 @@ const styles = StyleSheet.create({
     fontSize: 12, 
     color: '#D4AF37', 
     fontWeight: '800', 
-    letterSpacing: 1,
     textTransform: 'uppercase' 
   },
   
@@ -646,6 +646,10 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     color: '#94a3b8', 
     marginTop: 4 
+  },
+  // A phone number keeps its order inside a right-to-left screen.
+  ltr: {
+    writingDirection: 'ltr',
   },
   callButton: { 
     backgroundColor: '#D4AF37', 
@@ -672,7 +676,7 @@ const styles = StyleSheet.create({
     color: '#e2e8f0', 
     fontWeight: '500', 
     flex: 1,
-    marginRight: 10
+    marginEnd: 10
   },
   
   routeButton: {

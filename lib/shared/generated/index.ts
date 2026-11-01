@@ -4,6 +4,7 @@
  */
 
 export * from './envelope';
+export * from './i18n';
 export * from './intervention-status';
 export * from './staff-pages';
 export * from './trades';

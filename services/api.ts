@@ -2,6 +2,9 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 
+import { LOCALE_HEADER } from '@/lib/shared';
+import { currentLocale } from './i18n-core';
+
 // ✅ 1. READ URL FROM .ENV
 // This allows you to change the IP in one place (.env) without touching the code.
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -67,10 +70,13 @@ export const removeToken = async () => {
 };
 
 // ==========================================================
-// REQUEST: add the access token
+// REQUEST: add the access token and the language of the app
 // ==========================================================
 
 api.interceptors.request.use(async (config) => {
+  // The server answers (errors, texts it sends) in the language the app shows; the dashboard never sends this and gets French (P3-04).
+  config.headers[LOCALE_HEADER] = currentLocale();
+
   try {
     const token = await getToken();
     if (token) {
@@ -116,7 +122,7 @@ async function refreshAccessToken(): Promise<string> {
         const response = await axios.post(
           `${API_URL}/auth/refresh`,
           { refreshToken },
-          { timeout: REQUEST_TIMEOUT_MS },
+          { timeout: REQUEST_TIMEOUT_MS, headers: { [LOCALE_HEADER]: currentLocale() } },
         );
 
         await saveTokens(response.data);

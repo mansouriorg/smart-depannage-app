@@ -1,4 +1,6 @@
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
 import { CANONICAL_STATUSES, CanonicalStatus, STATUS_GROUPS, StatusGroup, canonicalStatus } from './generated/intervention-status';
+import { message } from './i18n';
 
 /**
  * What a job's status is called, and how it looks, in every app.
@@ -7,29 +9,25 @@ import { CANONICAL_STATUSES, CanonicalStatus, STATUS_GROUPS, StatusGroup, canoni
  * are typed `Record<CanonicalStatus, …>`: when the server adds a status and the generated copy is
  * updated, this file stops compiling until the new status has its words and its tone, so no app
  * shows a raw code for a status that exists.
+ *
+ * The words themselves are in the catalogue (`status.labels.*`, French and Arabic, P3-04): `STATUS_LABELS` is the French table, kept
+ * as it was for the dashboard, and `statusLabels(locale)` is the same table in any language.
  */
 
 /** How a status reads: the colour family an app gives it. */
 export type StatusTone = 'waiting' | 'info' | 'active' | 'success' | 'warning' | 'danger';
 
-export const STATUS_LABELS: Record<CanonicalStatus, string> = {
-  CREATED: 'En attente',
-  WAITING_ADMIN_REVIEW: 'En vérification',
-  QUOTE_SENT: 'Devis envoyé',
-  QUOTE_ACCEPTED: 'Devis accepté',
-  ASSIGNED: 'Assigné',
-  ARTISAN_ACCEPTED: 'Accepté',
-  ARTISAN_ON_THE_WAY: 'En route',
-  ARTISAN_ARRIVED: 'Arrivé',
-  IN_PROGRESS: 'En cours',
-  WAITING_CLIENT_VALIDATION: 'En attente de validation',
-  COMPLETED: 'Terminé',
-  PAYMENT_PENDING: 'Paiement en attente',
-  PAID: 'Payé',
-  INVOICE_SENT: 'Facture envoyée',
-  CANCELLED: 'Annulé',
-  DISPUTED: 'Litige',
-};
+/** The words of a status in a language. */
+export function statusLabels(locale: Locale = DEFAULT_LOCALE): Record<CanonicalStatus, string> {
+  const labels = {} as Record<CanonicalStatus, string>;
+
+  for (const status of CANONICAL_STATUSES) labels[status] = message(locale, `status.labels.${status}`);
+
+  return labels;
+}
+
+/** The French words of every status (the dashboard stays French). */
+export const STATUS_LABELS: Record<CanonicalStatus, string> = statusLabels('fr');
 
 export const STATUS_TONES: Record<CanonicalStatus, StatusTone> = {
   CREATED: 'waiting',
@@ -54,10 +52,10 @@ export const STATUS_TONES: Record<CanonicalStatus, StatusTone> = {
  * The words for a status, whichever spelling the server stored it with (PENDING and CREATED are the
  * same status). A status nobody knows is shown as it came, or as `fallback` when there is none.
  */
-export function statusLabel(status: string | null | undefined, fallback = ''): string {
+export function statusLabel(status: string | null | undefined, fallback = '', locale: Locale = DEFAULT_LOCALE): string {
   const canonical = canonicalStatus(status);
 
-  if (canonical) return STATUS_LABELS[canonical];
+  if (canonical) return message(locale, `status.labels.${canonical}`);
 
   return status ? String(status) : fallback;
 }
@@ -90,6 +88,8 @@ export function dashboardStatus(status: string | null | undefined): string {
 }
 
 /** Every status with its words, in the order of the job's life: for a filter or a <select>. */
-export function statusOptions(): Array<{ value: CanonicalStatus; label: string }> {
-  return CANONICAL_STATUSES.map((value) => ({ value, label: STATUS_LABELS[value] }));
+export function statusOptions(locale: Locale = DEFAULT_LOCALE): Array<{ value: CanonicalStatus; label: string }> {
+  const labels = statusLabels(locale);
+
+  return CANONICAL_STATUSES.map((value) => ({ value, label: labels[value] }));
 }

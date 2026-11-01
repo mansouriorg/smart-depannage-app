@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 
 import api, { apiErrorMessage, endSession } from '../services/api';
+import { useI18n } from '../services/i18n';
 import { changePasswordIssue, passwordProblems } from '../services/passwordRules';
 
 /**
@@ -22,6 +23,7 @@ import { changePasswordIssue, passwordProblems } from '../services/passwordRules
  * of the account when the password changes, so the artisan signs in again afterwards.
  */
 export default function ChangePasswordScreen() {
+  const { t, locale } = useI18n();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -29,12 +31,12 @@ export default function ChangePasswordScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const missing = next ? passwordProblems(next) : [];
+  const missing = next ? passwordProblems(next, locale) : [];
 
   const handleSubmit = async () => {
     if (loading) return;
 
-    const issue = changePasswordIssue(current, next, confirm);
+    const issue = changePasswordIssue(current, next, confirm, locale);
 
     if (issue) {
       setError(issue);
@@ -48,12 +50,12 @@ export default function ChangePasswordScreen() {
       await api.post('/auth/change-password', { currentPassword: current, newPassword: next });
 
       // The other sessions are ended by the server: leave this one too, and sign in again.
-      Alert.alert('Mot de passe modifié', 'Reconnectez-vous avec votre nouveau mot de passe.', [
-        { text: 'OK', onPress: () => void endSession() },
+      Alert.alert(t('app.changePassword.doneTitle'), t('app.changePassword.doneMessage'), [
+        { text: t('common.actions.ok'), onPress: () => void endSession() },
       ]);
     } catch (err) {
       // Never logged: the request holds both passwords.
-      setError(apiErrorMessage(err, 'Impossible de modifier le mot de passe. Réessayez.'));
+      setError(apiErrorMessage(err, t('app.changePassword.failed')));
     } finally {
       setLoading(false);
     }
@@ -70,7 +72,7 @@ export default function ChangePasswordScreen() {
             </View>
           ) : null}
 
-          <Text style={styles.label}>Mot de passe actuel</Text>
+          <Text style={styles.label}>{t('app.changePassword.current')}</Text>
           <TextInput
             style={styles.input}
             value={current}
@@ -84,7 +86,7 @@ export default function ChangePasswordScreen() {
             placeholderTextColor="#a8a29e"
           />
 
-          <Text style={styles.label}>Nouveau mot de passe</Text>
+          <Text style={styles.label}>{t('app.changePassword.next')}</Text>
           <TextInput
             style={styles.input}
             value={next}
@@ -94,12 +96,12 @@ export default function ChangePasswordScreen() {
             autoCorrect={false}
             textContentType="newPassword"
             autoComplete="new-password"
-            placeholder="8 caractères, une majuscule, un chiffre"
+            placeholder={t('app.changePassword.nextPlaceholder')}
             placeholderTextColor="#a8a29e"
           />
           {missing.length > 0 && <Text style={styles.hint}>{missing.join(' ')}</Text>}
 
-          <Text style={styles.label}>Confirmer le nouveau mot de passe</Text>
+          <Text style={styles.label}>{t('app.changePassword.confirm')}</Text>
           <TextInput
             style={styles.input}
             value={confirm}
@@ -115,11 +117,11 @@ export default function ChangePasswordScreen() {
 
           <TouchableOpacity style={styles.toggle} onPress={() => setVisible((value) => !value)}>
             <Ionicons name={visible ? 'eye-off-outline' : 'eye-outline'} size={18} color="#57534e" />
-            <Text style={styles.toggleText}>{visible ? 'Masquer' : 'Afficher'} les mots de passe</Text>
+            <Text style={styles.toggleText}>{visible ? t('app.changePassword.hide') : t('app.changePassword.show')}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={handleSubmit} disabled={loading}>
-            {loading ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.buttonText}>Modifier le mot de passe</Text>}
+            {loading ? <ActivityIndicator color="#0f172a" /> : <Text style={styles.buttonText}>{t('app.changePassword.submit')}</Text>}
           </TouchableOpacity>
         </View>
       </ScrollView>

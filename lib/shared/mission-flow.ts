@@ -1,5 +1,7 @@
 import type { MissionRejectionReason } from './generated/enums';
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
 import { CanonicalStatus, canonicalStatus, checkTransition } from './generated/intervention-status';
+import { message } from './i18n';
 
 /** The reasons for a refusal, as the server names them (the apps import the type from here). */
 export type { MissionRejectionReason };
@@ -14,6 +16,10 @@ export type { MissionRejectionReason };
  *
  * `complete` is the one step that is not a call of its own: the job is closed by the photo that proves
  * the work (POST /interventions/:id/complete-work), so the app opens the camera instead.
+ *
+ * The words (the buttons, the reasons, the milestones, the piles) are in the catalogue (`mission.*`, `artisan.availability.*`, French
+ * and Arabic, P3-04). The constants below (`MISSION_FLOW`, `DECLINE_REASONS`, `MISSION_BUCKETS`, `AVAILABILITY_LABELS`) keep their French
+ * words; the same table in a language is `missionFlow(locale)`, `declineReasons(locale)`, `missionBuckets(locale)`, `availabilityLabels(locale)`.
  */
 export type MissionStep = 'accept' | 'on-the-way' | 'arrived' | 'start' | 'complete';
 
@@ -42,13 +48,45 @@ export type MissionMoment =
   | 'workStartedAt'
   | 'workCompletedAt';
 
-export const MISSION_FLOW: readonly MissionStepInfo[] = [
-  { step: 'accept', from: 'ASSIGNED', to: 'ARTISAN_ACCEPTED', label: 'Accepter la mission', busyLabel: 'Acceptation…', doneAt: 'artisanAcceptedAt', needsProof: false },
-  { step: 'on-the-way', from: 'ARTISAN_ACCEPTED', to: 'ARTISAN_ON_THE_WAY', label: 'Je suis en route', busyLabel: 'Envoi…', doneAt: 'artisanOnTheWayAt', needsProof: false },
-  { step: 'arrived', from: 'ARTISAN_ON_THE_WAY', to: 'ARTISAN_ARRIVED', label: 'Je suis arrivé', busyLabel: 'Envoi…', doneAt: 'artisanArrivedAt', needsProof: false },
-  { step: 'start', from: 'ARTISAN_ARRIVED', to: 'IN_PROGRESS', label: 'Commencer les travaux', busyLabel: 'Démarrage…', doneAt: 'workStartedAt', needsProof: false },
-  { step: 'complete', from: 'IN_PROGRESS', to: 'COMPLETED', label: 'Terminer avec une photo', busyLabel: 'Envoi de la photo…', doneAt: 'workCompletedAt', needsProof: true },
+/** The key of each step in the catalogue (`mission.flow.<key>`, `mission.milestones.<key>`): the step ids with the hyphen written as a capital. */
+const WORDS_KEY: Record<MissionStep, 'accept' | 'onTheWay' | 'arrived' | 'start' | 'complete'> = {
+  accept: 'accept',
+  'on-the-way': 'onTheWay',
+  arrived: 'arrived',
+  start: 'start',
+  complete: 'complete',
+};
+
+/** The steps without their words. */
+const FLOW: ReadonlyArray<Omit<MissionStepInfo, 'label' | 'busyLabel'>> = [
+  { step: 'accept', from: 'ASSIGNED', to: 'ARTISAN_ACCEPTED', doneAt: 'artisanAcceptedAt', needsProof: false },
+  { step: 'on-the-way', from: 'ARTISAN_ACCEPTED', to: 'ARTISAN_ON_THE_WAY', doneAt: 'artisanOnTheWayAt', needsProof: false },
+  { step: 'arrived', from: 'ARTISAN_ON_THE_WAY', to: 'ARTISAN_ARRIVED', doneAt: 'artisanArrivedAt', needsProof: false },
+  { step: 'start', from: 'ARTISAN_ARRIVED', to: 'IN_PROGRESS', doneAt: 'workStartedAt', needsProof: false },
+  { step: 'complete', from: 'IN_PROGRESS', to: 'COMPLETED', doneAt: 'workCompletedAt', needsProof: true },
 ];
+
+function withWords(entry: Omit<MissionStepInfo, 'label' | 'busyLabel'>, locale: Locale): MissionStepInfo {
+  const key = WORDS_KEY[entry.step];
+
+  return {
+    step: entry.step,
+    from: entry.from,
+    to: entry.to,
+    label: message(locale, `mission.flow.${key}.label`),
+    busyLabel: message(locale, `mission.flow.${key}.busy`),
+    doneAt: entry.doneAt,
+    needsProof: entry.needsProof,
+  };
+}
+
+/** The steps of a mission in a language. */
+export function missionFlow(locale: Locale = DEFAULT_LOCALE): readonly MissionStepInfo[] {
+  return FLOW.map((entry) => withWords(entry, locale));
+}
+
+/** The steps of a mission, in French. */
+export const MISSION_FLOW: readonly MissionStepInfo[] = missionFlow('fr');
 
 /** Whether the status table lets an artisan move a job from one status to the other. */
 function tableAllowsArtisan(from: CanonicalStatus, to: CanonicalStatus): boolean {
@@ -63,17 +101,18 @@ function tableAllowsArtisan(from: CanonicalStatus, to: CanonicalStatus): boolean
 export function nextMissionStep(
   status: string | null | undefined,
   allowed: (from: CanonicalStatus, to: CanonicalStatus) => boolean = tableAllowsArtisan,
+  locale: Locale = DEFAULT_LOCALE,
 ): MissionStepInfo | null {
   const current = canonicalStatus(status);
 
   if (!current) return null;
 
-  const step = MISSION_FLOW.find((entry) => entry.from === current);
+  const step = FLOW.find((entry) => entry.from === current);
 
   if (!step) return null;
 
   // The server's table has the last word: a step it no longer allows an artisan is not offered.
-  return allowed(current, step.to) ? step : null;
+  return allowed(current, step.to) ? withWords(step, locale) : null;
 }
 
 /** What the artisan can do to hand a job back, in this status (null: they cannot). */
@@ -87,7 +126,7 @@ export interface MissionRefusal {
  * Handing a job back: a refusal before the job was accepted, a "give back" after. Not once the work has
  * started (the table gives the artisan no way back from "in progress": it goes to the back office).
  */
-export function missionRefusal(status: string | null | undefined): MissionRefusal | null {
+export function missionRefusal(status: string | null | undefined, locale: Locale = DEFAULT_LOCALE): MissionRefusal | null {
   const current = canonicalStatus(status);
 
   if (!current) return null;
@@ -98,18 +137,20 @@ export function missionRefusal(status: string | null | undefined): MissionRefusa
   }
 
   return current === 'ASSIGNED'
-    ? { label: 'Refuser la mission', question: 'Pourquoi refusez-vous cette mission ?' }
-    : { label: 'Rendre la mission', question: 'Pourquoi rendez-vous cette mission ?' };
+    ? { label: message(locale, 'mission.refusal.refuse.label'), question: message(locale, 'mission.refusal.refuse.question') }
+    : { label: message(locale, 'mission.refusal.giveBack.label'), question: message(locale, 'mission.refusal.giveBack.question') };
 }
 
-/** The reasons an artisan can give for a refusal, as the server knows them, with their words. */
-export const DECLINE_REASONS: ReadonlyArray<{ value: MissionRejectionReason; label: string }> = [
-  { value: 'NOT_AVAILABLE', label: 'Je ne suis pas disponible' },
-  { value: 'TOO_FAR', label: 'C’est trop loin' },
-  { value: 'OUT_OF_SPECIALTY', label: 'Ce n’est pas ma spécialité' },
-  { value: 'PRICE_TOO_LOW', label: 'Le prix est trop bas' },
-  { value: 'OTHER', label: 'Autre raison' },
-];
+/** The reasons an artisan can give for a refusal, as the server knows them (`MissionRejectionReason`), in the order they are offered. */
+const DECLINE_VALUES: readonly MissionRejectionReason[] = ['NOT_AVAILABLE', 'TOO_FAR', 'OUT_OF_SPECIALTY', 'PRICE_TOO_LOW', 'OTHER'];
+
+/** The reasons an artisan can give for a refusal, with their words in a language. */
+export function declineReasons(locale: Locale = DEFAULT_LOCALE): ReadonlyArray<{ value: MissionRejectionReason; label: string }> {
+  return DECLINE_VALUES.map((value) => ({ value, label: message(locale, `mission.decline.${value}`) }));
+}
+
+/** The reasons an artisan can give for a refusal, as the server knows them, with their French words. */
+export const DECLINE_REASONS: ReadonlyArray<{ value: MissionRejectionReason; label: string }> = declineReasons('fr');
 
 export interface MissionMoments {
   assignedAt?: string | null;
@@ -131,13 +172,14 @@ export interface MissionMilestone {
   readonly current: boolean;
 }
 
-const MILESTONE_LABELS: Record<MissionMilestone['key'], string> = {
-  assigned: 'Mission assignée',
-  accept: 'Mission acceptée',
-  'on-the-way': 'En route vers le client',
-  arrived: 'Arrivé chez le client',
-  start: 'Travaux commencés',
-  complete: 'Travaux terminés',
+/** The key of each milestone in the catalogue (`mission.milestones.<key>`). */
+const MILESTONE_KEYS: Record<MissionMilestone['key'], 'assigned' | 'accept' | 'onTheWay' | 'arrived' | 'start' | 'complete'> = {
+  assigned: 'assigned',
+  accept: 'accept',
+  'on-the-way': 'onTheWay',
+  arrived: 'arrived',
+  start: 'start',
+  complete: 'complete',
 };
 
 /** How far a status is along the mission (0: assigned … 5: done). Statuses outside the mission have no place. */
@@ -157,11 +199,15 @@ const STAGE_OF_STATUS: Partial<Record<CanonicalStatus, number>> = {
 /** The three piles an artisan sorts their missions in: to accept, under way, over. */
 export type MissionBucket = 'todo' | 'active' | 'done';
 
-export const MISSION_BUCKETS: ReadonlyArray<{ id: MissionBucket; label: string }> = [
-  { id: 'todo', label: 'À accepter' },
-  { id: 'active', label: 'En cours' },
-  { id: 'done', label: 'Terminées' },
-];
+const BUCKET_IDS: readonly MissionBucket[] = ['todo', 'active', 'done'];
+
+/** The three piles with their words in a language. */
+export function missionBuckets(locale: Locale = DEFAULT_LOCALE): ReadonlyArray<{ id: MissionBucket; label: string }> {
+  return BUCKET_IDS.map((id) => ({ id, label: message(locale, `mission.buckets.${id}`) }));
+}
+
+/** The three piles with their French words. */
+export const MISSION_BUCKETS: ReadonlyArray<{ id: MissionBucket; label: string }> = missionBuckets('fr');
 
 /**
  * Which pile a mission is in, from its status: "to accept" while it is only assigned, "under way" from the
@@ -186,13 +232,13 @@ export function missionBucketOf(status: string | null | undefined): MissionBucke
  * was handed over again is not shown. A job whose status is outside the mission (cancelled, in dispute) is
  * read from its moments alone and waits on no step. The step the job waits on is the `current` one.
  */
-export function missionTimeline(job: MissionMoments): MissionMilestone[] {
+export function missionTimeline(job: MissionMoments, locale: Locale = DEFAULT_LOCALE): MissionMilestone[] {
   const current = canonicalStatus(job.status);
   const position = current ? STAGE_OF_STATUS[current] : undefined;
 
   const rows: Array<{ key: MissionMilestone['key']; moment: MissionMoment; stage: number }> = [
     { key: 'assigned', moment: 'assignedAt', stage: 0 },
-    ...MISSION_FLOW.map((entry, index) => ({ key: entry.step as MissionMilestone['key'], moment: entry.doneAt, stage: index + 1 })),
+    ...FLOW.map((entry, index) => ({ key: entry.step as MissionMilestone['key'], moment: entry.doneAt, stage: index + 1 })),
   ];
 
   const steps = rows.map((row) => {
@@ -207,7 +253,7 @@ export function missionTimeline(job: MissionMoments): MissionMilestone[] {
 
   return steps.map(({ row, done, at }) => ({
     key: row.key,
-    label: MILESTONE_LABELS[row.key],
+    label: message(locale, `mission.milestones.${MILESTONE_KEYS[row.key]}`),
     at,
     done,
     // A job outside the mission (cancelled, in dispute, back in the queue) waits on no step of it.
@@ -235,8 +281,14 @@ export function availabilityView(profile: AvailabilityFields | null | undefined)
   return profile.availabilityStatus === 'ONLINE' && profile.isAcceptingJobs === true ? 'online' : 'offline';
 }
 
-export const AVAILABILITY_LABELS: Record<AvailabilityView, string> = {
-  online: 'En ligne',
-  busy: 'Occupé',
-  offline: 'Hors ligne',
-};
+/** The words of the toggle in a language. */
+export function availabilityLabels(locale: Locale = DEFAULT_LOCALE): Record<AvailabilityView, string> {
+  return {
+    online: message(locale, 'artisan.availability.online'),
+    busy: message(locale, 'artisan.availability.busy'),
+    offline: message(locale, 'artisan.availability.offline'),
+  };
+}
+
+/** The words of the toggle in French. */
+export const AVAILABILITY_LABELS: Record<AvailabilityView, string> = availabilityLabels('fr');

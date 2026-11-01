@@ -3,6 +3,8 @@ import * as Location from 'expo-location';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { useI18n } from '../services/i18n';
+
 // Define the shape of the data we send back to the Mission Details screen
 interface ProofData {
   uri: string;
@@ -25,6 +27,8 @@ interface ProofOfWorkCameraProps {
 }
 
 export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: ProofOfWorkCameraProps) {
+  const { t } = useI18n();
+
   // 1. Hardware Permissions
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const [locationStatus, requestLocationPermission] = Location.useForegroundPermissions();
@@ -46,7 +50,7 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#D4AF37" />
-        <Text style={styles.loadingText}>Vérification des autorisations...</Text>
+        <Text style={styles.loadingText}>{t('app.camera.checking')}</Text>
       </View>
     );
   }
@@ -54,9 +58,7 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
   if (!cameraPermission.granted || !locationStatus.granted) {
     return (
       <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>
-          L'application a absolument besoin de la caméra et de votre position GPS pour créer une preuve de travail valide.
-        </Text>
+        <Text style={styles.errorText}>{t('app.camera.needed')}</Text>
         <TouchableOpacity
           style={styles.retryButton}
           onPress={async () => {
@@ -64,11 +66,11 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
             await requestLocationPermission();
           }}
         >
-          <Text style={styles.retryButtonText}>Autoriser l'accès</Text>
+          <Text style={styles.retryButtonText}>{t('app.camera.allow')}</Text>
         </TouchableOpacity>
         {onCancel && (
           <TouchableOpacity style={styles.cancelLink} onPress={onCancel}>
-            <Text style={styles.cancelLinkText}>Retour</Text>
+            <Text style={styles.cancelLinkText}>{t('common.actions.back')}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -109,10 +111,7 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
     } catch (error) {
       console.error("Erreur lors de la capture :", error);
       setIsProcessing(false);
-      Alert.alert(
-        "Capture impossible",
-        "La photo ou la position GPS n'a pas pu être enregistrée. Vérifiez que le GPS est activé puis réessayez.",
-      );
+      Alert.alert(t('app.camera.failedTitle'), t('app.camera.failedMessage'));
     }
   };
 
@@ -131,15 +130,15 @@ export default function ProofOfWorkCamera({ onCaptureComplete, onCancel }: Proof
           
           {/* Top Banner: Instructions */}
           <View style={styles.header}>
-            <Text style={styles.headerText}>Preuve de Travail</Text>
-            <Text style={styles.subHeaderText}>Prenez la photo sur place: GPS et heure sont vérifiés</Text>
+            <Text style={styles.headerText}>{t('app.camera.header')}</Text>
+            <Text style={styles.subHeaderText}>{t('app.camera.hint')}</Text>
           </View>
 
           {/* Bottom Banner: Shutter Button */}
           <View style={styles.footer}>
             {onCancel && (
               <TouchableOpacity style={styles.cancelLink} onPress={onCancel} disabled={isProcessing}>
-                <Text style={styles.cancelLinkText}>Annuler</Text>
+                <Text style={styles.cancelLinkText}>{t('common.actions.cancel')}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity

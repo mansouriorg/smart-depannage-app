@@ -1,7 +1,8 @@
 import type { ArtisanIntervention, ArtisanInterventionQuote } from './generated/views';
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
 import { canonicalStatus, type CanonicalStatus } from './generated/intervention-status';
-import { serviceNameOf } from './generated/trades';
 import { categoryOfTrade, durationText, type PublicCategory, type PublicSubService } from './guest';
+import { message } from './i18n';
 import {
   MAX_LINE_TOTAL,
   MAX_QUANTITY,
@@ -16,16 +17,20 @@ import {
   toDinars,
   toMillimes,
   totalsOf,
+  type QuantityProblem,
   type Totals,
 } from './money';
+import { serviceName } from './trade-words';
+import { charactersText, isolateFor } from './words';
 
 /**
  * The quote an artisan makes on their phone (P2-05): what the screen starts from, what it checks before it sends, and
  * the body the server takes (POST /quotes/interventions/:id, PATCH /quotes/:id).
  *
  * The screen keeps what the person typed as text (`QuoteDraft`). `buildQuote` reads that text the way the server will
- * (money.ts), says in French what is wrong with each line, and gives the body only when nothing is. The total shown on
- * the screen and the total the server writes are worked out by the same rules, so they are the same number.
+ * (money.ts), says what is wrong with each line (in French, or in the `locale` it is given: the sentences are in the catalogue,
+ * `quote.*`), and gives the body only when nothing is. The total shown on the screen and the total the server writes are worked out
+ * by the same rules, so they are the same number.
  */
 
 /** The standard rate of value-added tax in Tunisia, in percent: the rate a quote starts with. */
@@ -119,13 +124,13 @@ export function catalogPrice(sub: Pick<PublicSubService, 'basePrice' | 'emergenc
 export type QuoteJob = Pick<ArtisanIntervention, 'serviceType' | 'urgency' | 'subService'>;
 
 /** What the quote of a mission starts from: its sub-service, with the price of the catalog when there is one. */
-export function prefillDraft(job: QuoteJob, key: () => string = lineKey): QuoteDraft {
+export function prefillDraft(job: QuoteJob, key: () => string = lineKey, locale: Locale = DEFAULT_LOCALE): QuoteDraft {
   const sub = job.subService ?? null;
-  const work = (sub?.name ?? '').trim() || serviceNameOf(job.serviceType).trim() || 'Intervention';
+  const work = (sub?.name ?? '').trim() || serviceName(job.serviceType, locale).trim() || message(locale, 'quote.draft.defaultWork');
   const price = catalogPrice(sub, job.urgency);
 
   return {
-    title: `Devis – ${work}`.slice(0, QUOTE_LIMITS.title),
+    title: message(locale, 'quote.draft.title', { work }).slice(0, QUOTE_LIMITS.title),
     description: '',
     taxRate: DEFAULT_TAX_RATE,
     validDays: DEFAULT_VALIDITY_DAYS,
@@ -134,14 +139,14 @@ export function prefillDraft(job: QuoteJob, key: () => string = lineKey): QuoteD
 }
 
 /** The sentence under the first line: where its price comes from. */
-export function prefillHint(job: QuoteJob): string {
+export function prefillHint(job: QuoteJob, locale: Locale = DEFAULT_LOCALE): string {
   const price = catalogPrice(job.subService ?? null, job.urgency);
 
-  if (!price) return 'Ce service est « sur devis » : indiquez votre prix.';
+  if (!price) return message(locale, 'quote.hint.onQuote');
 
-  return price.kind === 'emergency'
-    ? `Prix du catalogue pour une urgence (${formatDinars(price.price)}). Ajustez-le si besoin.`
-    : `Prix du catalogue (${formatDinars(price.price)}). Ajustez-le si besoin.`;
+  return message(locale, price.kind === 'emergency' ? 'quote.hint.emergency' : 'quote.hint.base', {
+    price: isolateFor(locale, formatDinars(price.price, undefined, locale)),
+  });
 }
 
 export interface CatalogChoice {
@@ -155,7 +160,12 @@ export interface CatalogChoice {
 }
 
 /** The sub-services of the trade of a job that a line can be added from, with their price for this job. */
-export function catalogChoices(catalog: readonly PublicCategory[] | null | undefined, serviceType: string, urgency: string | null | undefined): CatalogChoice[] {
+export function catalogChoices(
+  catalog: readonly PublicCategory[] | null | undefined,
+  serviceType: string,
+  urgency: string | null | undefined,
+  locale: Locale = DEFAULT_LOCALE,
+): CatalogChoice[] {
   const category = categoryOfTrade(catalog, serviceType);
 
   return (category?.subServices ?? []).map((sub) => {
@@ -166,8 +176,8 @@ export function catalogChoices(catalog: readonly PublicCategory[] | null | undef
       name: sub.name,
       price: price?.price ?? null,
       kind: price?.kind ?? null,
-      priceText: price ? formatDinars(price.price) : 'Sur devis',
-      duration: durationText(sub.estimatedDuration),
+      priceText: price ? formatDinars(price.price, undefined, locale) : message(locale, 'money.price.onQuote'),
+      duration: durationText(sub.estimatedDuration, locale),
     };
   });
 }
@@ -252,20 +262,35 @@ export function isBlankLine(line: Pick<QuoteDraftLine, 'label' | 'unitPrice'>): 
   return line.label.trim() === '' && line.unitPrice.trim() === '';
 }
 
-const QUANTITY_WORDS = {
-  empty: 'Indiquez la quantité.',
-  format: 'Quantité invalide : écrivez par exemple 1 ou 2,5.',
-  decimals: 'Une quantité a au plus deux décimales.',
-  zero: 'La quantité doit être supérieure à 0.',
-  'too-big': `La quantité ne peut pas dépasser ${MAX_QUANTITY}.`,
-} as const;
+/** What is wrong with a quantity, in words. The examples are values (1, 2,5), set apart from an Arabic sentence. */
+function quantityWords(problem: QuantityProblem, locale: Locale): string {
+  switch (problem) {
+    case 'empty':
+      return message(locale, 'quote.problems.quantityEmpty');
+    case 'format':
+      return message(locale, 'quote.problems.quantityFormat', { first: isolateFor(locale, '1'), second: isolateFor(locale, '2,5') });
+    case 'decimals':
+      return message(locale, 'quote.problems.quantityDecimals');
+    case 'zero':
+      return message(locale, 'quote.problems.quantityZero');
+    default:
+      return message(locale, 'quote.problems.quantityTooBig', { max: isolateFor(locale, MAX_QUANTITY) });
+  }
+}
 
-const PRICE_WORDS = {
-  empty: 'Indiquez le prix unitaire.',
-  format: 'Prix invalide : écrivez par exemple 45 ou 45,500.',
-  decimals: 'Un prix a au plus trois décimales (millimes).',
-  'too-big': `Le prix ne peut pas dépasser ${formatDinars(MAX_UNIT_PRICE)}.`,
-} as const;
+/** What is wrong with a unit price, in words. */
+function priceWords(problem: 'empty' | 'format' | 'decimals' | 'too-big', locale: Locale): string {
+  switch (problem) {
+    case 'empty':
+      return message(locale, 'quote.problems.priceEmpty');
+    case 'format':
+      return message(locale, 'quote.problems.priceFormat', { first: isolateFor(locale, '45'), second: isolateFor(locale, '45,500') });
+    case 'decimals':
+      return message(locale, 'quote.problems.priceDecimals');
+    default:
+      return message(locale, 'quote.problems.priceTooBig', { max: isolateFor(locale, formatDinars(MAX_UNIT_PRICE, undefined, locale)) });
+  }
+}
 
 interface ReadLine {
   index: number;
@@ -283,28 +308,30 @@ function validRate(rate: unknown): rate is number {
   return typeof rate === 'number' && Number.isFinite(rate) && rate >= 0 && rate <= 100 && Math.round(rate * 100) / 100 === rate;
 }
 
-/** Reads a draft the way the server will, and lists everything that is wrong with it. */
-export function readQuote(draft: QuoteDraft): QuoteReading {
+/** Reads a draft the way the server will, and lists everything that is wrong with it (in the language asked, French when it is left out). */
+export function readQuote(draft: QuoteDraft, locale: Locale = DEFAULT_LOCALE): QuoteReading {
   const problems: QuoteProblem[] = [];
   const title = draft.title.trim();
 
-  if (title === '') problems.push({ field: 'title', line: null, message: 'Donnez un titre au devis.' });
-  else if (title.length > QUOTE_LIMITS.title) problems.push({ field: 'title', line: null, message: `Le titre est trop long (${QUOTE_LIMITS.title} caractères au plus).` });
-
-  if (draft.description.trim().length > QUOTE_LIMITS.description) {
-    problems.push({ field: 'description', line: null, message: `La description est trop longue (${QUOTE_LIMITS.description} caractères au plus).` });
+  if (title === '') problems.push({ field: 'title', line: null, message: message(locale, 'quote.problems.titleRequired') });
+  else if (title.length > QUOTE_LIMITS.title) {
+    problems.push({ field: 'title', line: null, message: message(locale, 'quote.problems.titleLong', { max: charactersText(QUOTE_LIMITS.title, locale) }) });
   }
 
-  if (!validRate(draft.taxRate)) problems.push({ field: 'tax', line: null, message: 'Taux de TVA invalide : de 0 à 100 %, avec au plus deux décimales.' });
+  if (draft.description.trim().length > QUOTE_LIMITS.description) {
+    problems.push({ field: 'description', line: null, message: message(locale, 'quote.problems.descriptionLong', { max: charactersText(QUOTE_LIMITS.description, locale) }) });
+  }
+
+  if (!validRate(draft.taxRate)) problems.push({ field: 'tax', line: null, message: message(locale, 'quote.problems.taxRate') });
 
   if (draft.validDays !== null && !(Number.isInteger(draft.validDays) && draft.validDays >= 1 && draft.validDays <= 365)) {
-    problems.push({ field: 'validity', line: null, message: 'La durée de validité doit être de 1 à 365 jours.' });
+    problems.push({ field: 'validity', line: null, message: message(locale, 'quote.problems.validity') });
   }
 
   const kept = draft.lines.map((line, index) => ({ line, index })).filter(({ line }) => !isBlankLine(line));
 
-  if (kept.length === 0) problems.push({ field: 'lines', line: null, message: 'Ajoutez au moins une ligne au devis.' });
-  else if (kept.length > MAX_QUOTE_LINES) problems.push({ field: 'lines', line: null, message: `Un devis ne peut pas avoir plus de ${MAX_QUOTE_LINES} lignes.` });
+  if (kept.length === 0) problems.push({ field: 'lines', line: null, message: message(locale, 'quote.problems.linesNone') });
+  else if (kept.length > MAX_QUOTE_LINES) problems.push({ field: 'lines', line: null, message: message(locale, 'quote.problems.linesTooMany', { max: MAX_QUOTE_LINES }) });
 
   const lines: ReadLine[] = [];
 
@@ -315,24 +342,24 @@ export function readQuote(draft: QuoteDraft): QuoteReading {
     let fine = true;
 
     if (label === '') {
-      problems.push({ field: 'label', line: index, message: 'Indiquez ce que couvre cette ligne.' });
+      problems.push({ field: 'label', line: index, message: message(locale, 'quote.problems.labelRequired') });
       fine = false;
     } else if (label.length > QUOTE_LIMITS.label) {
-      problems.push({ field: 'label', line: index, message: `Le libellé est trop long (${QUOTE_LIMITS.label} caractères au plus).` });
+      problems.push({ field: 'label', line: index, message: message(locale, 'quote.problems.labelLong', { max: charactersText(QUOTE_LIMITS.label, locale) }) });
       fine = false;
     }
 
     if (!quantity.ok) {
-      problems.push({ field: 'quantity', line: index, message: QUANTITY_WORDS[quantity.problem] });
+      problems.push({ field: 'quantity', line: index, message: quantityWords(quantity.problem, locale) });
     }
 
     if (!price.ok) {
-      problems.push({ field: 'unitPrice', line: index, message: PRICE_WORDS[price.problem] });
+      problems.push({ field: 'unitPrice', line: index, message: priceWords(price.problem, locale) });
     }
 
     if (quantity.ok && price.ok) {
       if (lineTotalMillimes(price.millimes, quantity.hundredths) > MAX_LINE_TOTAL * MILLIMES_PER_DINAR) {
-        problems.push({ field: 'total', line: index, message: `Une ligne ne peut pas dépasser ${formatDinars(MAX_LINE_TOTAL)}.` });
+        problems.push({ field: 'total', line: index, message: message(locale, 'quote.problems.lineTooBig', { max: isolateFor(locale, formatDinars(MAX_LINE_TOTAL, undefined, locale)) }) });
         fine = false;
       }
 
@@ -377,14 +404,14 @@ export type QuoteBuild = { ok: true; body: QuoteBody; totals: Totals } | { ok: f
  * The body to send, or everything that is wrong. `create` leaves the description out when it is empty; `update` always sends
  * it (an empty text clears it, and nothing leaves the old one). The date a quote can be accepted until counts from `now`.
  */
-export function buildQuote(draft: QuoteDraft, now: Date, mode: 'create' | 'update' = 'create'): QuoteBuild {
-  const { problems, lines } = readQuote(draft);
+export function buildQuote(draft: QuoteDraft, now: Date, mode: 'create' | 'update' = 'create', locale: Locale = DEFAULT_LOCALE): QuoteBuild {
+  const { problems, lines } = readQuote(draft, locale);
 
   if (problems.length > 0) return { ok: false, problems };
 
   const totals = totalsOf(lines, draft.taxRate);
 
-  if (totals.amountHT <= 0) return { ok: false, problems: [{ field: 'quote', line: null, message: 'Le total du devis doit être supérieur à 0.' }] };
+  if (totals.amountHT <= 0) return { ok: false, problems: [{ field: 'quote', line: null, message: message(locale, 'quote.problems.totalZero') }] };
 
   const description = draft.description.trim();
   const body: QuoteBody = {
@@ -458,13 +485,13 @@ export interface QuoteState {
 const byNewest = (a: ArtisanInterventionQuote, b: ArtisanInterventionQuote) => b.id - a.id;
 
 /** Where the mission is with its quote, and what the artisan can do about it. `now` is the moment the dates are read against. */
-export function quoteState(job: { status?: string | null; quotes?: ArtisanIntervention['quotes'] }, now: Date = new Date()): QuoteState {
+export function quoteState(job: { status?: string | null; quotes?: ArtisanIntervention['quotes'] }, now: Date = new Date(), locale: Locale = DEFAULT_LOCALE): QuoteState {
   const quotes = [...(job.quotes ?? [])].sort(byNewest);
   const open = canQuote(job.status);
   const accepted = quotes.find((quote) => quote.status === 'ACCEPTED');
 
   // Payments follow the accepted quote: a second one beside it would be taken for the price, so none is offered.
-  if (accepted) return { stage: 'accepted', quote: accepted, canCreate: false, canEdit: false, resend: false, words: 'Devis accepté par le client.' };
+  if (accepted) return { stage: 'accepted', quote: accepted, canCreate: false, canEdit: false, resend: false, words: message(locale, 'quote.state.accepted') };
 
   const out = quotes.find((quote) => quote.status === 'SENT' || quote.status === 'MODIFICATION_REQUESTED');
 
@@ -472,13 +499,13 @@ export function quoteState(job: { status?: string | null; quotes?: ArtisanInterv
     // Nothing turns a sent quote into an expired one by itself: its date is read here, so that the card does not say "waiting" for
     // an answer the customer can no longer give.
     if (out.status === 'SENT' && hasLapsed(out, now)) {
-      const gone = 'Le devis envoyé est arrivé à échéance : le client ne peut plus l’accepter.';
+      const gone = message(locale, 'quote.state.expired');
 
-      return { stage: 'expired', quote: out, canCreate: false, canEdit: open, resend: false, words: open ? `${gone} Modifiez-le pour lui donner une nouvelle durée de validité.` : gone };
+      return { stage: 'expired', quote: out, canCreate: false, canEdit: open, resend: false, words: open ? `${gone} ${message(locale, 'quote.state.expiredEditHint')}` : gone };
     }
 
     if (out.status === 'SENT') {
-      return { stage: 'waiting', quote: out, canCreate: false, canEdit: open, resend: false, words: 'Devis envoyé : le client n’a pas encore répondu.' };
+      return { stage: 'waiting', quote: out, canCreate: false, canEdit: open, resend: false, words: message(locale, 'quote.state.waiting') };
     }
 
     return {
@@ -487,21 +514,19 @@ export function quoteState(job: { status?: string | null; quotes?: ArtisanInterv
       canCreate: false,
       canEdit: open,
       resend: true,
-      words: open
-        ? 'Le client demande une modification du devis : changez-le, il sera renvoyé au client.'
-        : 'Le client demande une modification du devis, mais vous ne pouvez plus le modifier à ce stade de la mission : contactez l’administration.',
+      words: open ? message(locale, 'quote.state.changesOpen') : message(locale, 'quote.state.changesLocked'),
     };
   }
 
   const last = quotes[0] ?? null;
   const words =
     last?.status === 'REJECTED'
-      ? 'Le dernier devis a été refusé par le client.'
+      ? message(locale, 'quote.state.lastRejected')
       : last?.status === 'EXPIRED'
-        ? 'Le dernier devis a expiré.'
+        ? message(locale, 'quote.state.lastExpired')
         : last?.status === 'CANCELLED'
-          ? 'Le dernier devis a été annulé.'
-          : 'Aucun devis envoyé pour cette mission.';
+          ? message(locale, 'quote.state.lastCancelled')
+          : message(locale, 'quote.state.none');
 
   return { stage: 'none', quote: last, canCreate: open, canEdit: false, resend: false, words };
 }
@@ -511,25 +536,25 @@ export function quoteState(job: { status?: string | null; quotes?: ArtisanInterv
  * screen was opened to change, or null when it was opened to make one. The screen asks after reading the mission, because a link
  * to it can be opened late: the customer may have answered, or the mission may have moved on.
  */
-export function quoteBlock(job: { status?: string | null; quotes?: ArtisanIntervention['quotes'] }, editing: number | null): string | null {
-  const state = quoteState(job);
+export function quoteBlock(job: { status?: string | null; quotes?: ArtisanIntervention['quotes'] }, editing: number | null, locale: Locale = DEFAULT_LOCALE): string | null {
+  const state = quoteState(job, new Date(), locale);
 
   if (editing !== null) {
     if (state.quote?.id === editing && state.canEdit) return null;
-    if (state.stage === 'accepted') return 'Ce devis a été accepté par le client : il ne peut plus être modifié.';
-    if (!(job.quotes ?? []).some((quote) => quote.id === editing)) return 'Ce devis n’existe plus.';
+    if (state.stage === 'accepted') return message(locale, 'quote.block.acceptedLocked');
+    if (!(job.quotes ?? []).some((quote) => quote.id === editing)) return message(locale, 'quote.block.gone');
 
-    return 'Ce devis ne peut plus être modifié.';
+    return message(locale, 'quote.block.locked');
   }
 
   if (state.canCreate) return null;
-  if (state.stage === 'accepted') return 'Le client a déjà accepté un devis pour cette mission.';
-  if (state.stage !== 'none') return 'Un devis est déjà en cours pour cette mission : modifiez-le depuis la mission.';
+  if (state.stage === 'accepted') return message(locale, 'quote.block.alreadyAccepted');
+  if (state.stage !== 'none') return message(locale, 'quote.block.alreadyOut');
 
-  return 'Un devis peut être établi entre l’acceptation de la mission et la fin des travaux.';
+  return message(locale, 'quote.block.window');
 }
 
-/** The one-line total of a quote: "119,000 DT TTC". */
-export function quoteTotalText(quote: Pick<ArtisanInterventionQuote, 'amountTTC'>): string {
-  return `${formatMillimes(toMillimes(quote.amountTTC))} TTC`;
+/** The one-line total of a quote: "119,000 DT TTC" ("119,000 د.ت شامل للأداء"). */
+export function quoteTotalText(quote: Pick<ArtisanInterventionQuote, 'amountTTC'>, locale: Locale = DEFAULT_LOCALE): string {
+  return message(locale, 'money.withTax', { amount: isolateFor(locale, formatMillimes(toMillimes(quote.amountTTC), undefined, locale)) });
 }

@@ -2,7 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { quoteState, quoteTotalText, type ArtisanIntervention } from '@/lib/shared';
+import { isolateFor, quoteState, quoteTotalText, type ArtisanIntervention } from '@/lib/shared';
+import { useI18n } from '../services/i18n';
+import { spacing } from '../services/i18n-core';
 
 const STAGE_LOOK = {
   none: { color: '#94a3b8', icon: 'document-text-outline' },
@@ -26,7 +28,8 @@ export function QuoteCard({
   onMake: () => void;
   onChange: (quoteId: number) => void;
 }) {
-  const state = quoteState(job);
+  const { t, locale, isRtl } = useI18n();
+  const state = quoteState(job, undefined, locale);
   const look = STAGE_LOOK[state.stage];
   const quote = state.quote;
 
@@ -34,7 +37,7 @@ export function QuoteCard({
     <View style={styles.card}>
       <View style={styles.titleRow}>
         <Ionicons name="receipt" size={20} color="#D4AF37" />
-        <Text style={styles.title}>DEVIS</Text>
+        <Text style={[styles.title, { letterSpacing: spacing(locale, 1) }]}>{t('app.quoteCard.title')}</Text>
       </View>
 
       <View style={styles.statusRow}>
@@ -47,22 +50,22 @@ export function QuoteCard({
           <Text style={styles.quoteTitle} numberOfLines={2}>
             {quote.title}
           </Text>
-          <Text style={styles.quoteTotal}>{quoteTotalText(quote)}</Text>
-          {state.stage === 'changes' && quote.clientNote ? <Text style={styles.note}>« {quote.clientNote} »</Text> : null}
+          <Text style={styles.quoteTotal}>{quoteTotalText(quote, locale)}</Text>
+          {state.stage === 'changes' && quote.clientNote ? <Text style={[styles.note, isRtl && styles.upright]}>{t('app.quoteCard.note', { note: isolateFor(locale, quote.clientNote) })}</Text> : null}
         </View>
       ) : null}
 
       {state.canCreate ? (
         <TouchableOpacity style={styles.button} onPress={onMake} accessibilityRole="button">
           <Ionicons name="add-circle-outline" size={18} color="#D4AF37" />
-          <Text style={styles.buttonText}>{quote ? 'Établir un nouveau devis' : 'Établir un devis'}</Text>
+          <Text style={styles.buttonText}>{quote ? t('app.quoteCard.makeNew') : t('app.quoteCard.make')}</Text>
         </TouchableOpacity>
       ) : null}
 
       {state.canEdit && quote ? (
         <TouchableOpacity style={styles.button} onPress={() => onChange(quote.id)} accessibilityRole="button">
           <Ionicons name="create-outline" size={18} color="#D4AF37" />
-          <Text style={styles.buttonText}>{state.resend ? 'Modifier et renvoyer le devis' : state.stage === 'expired' ? 'Modifier et prolonger le devis' : 'Modifier le devis'}</Text>
+          <Text style={styles.buttonText}>{state.resend ? t('app.quoteCard.changeResend') : state.stage === 'expired' ? t('app.quoteCard.changeExtend') : t('app.quoteCard.change')}</Text>
         </TouchableOpacity>
       ) : null}
     </View>
@@ -80,13 +83,15 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { fontSize: 12, color: '#D4AF37', fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
+  title: { fontSize: 12, color: '#D4AF37', fontWeight: '800', textTransform: 'uppercase' },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   words: { flex: 1, fontSize: 15, fontWeight: '600', lineHeight: 21 },
   quoteBox: { backgroundColor: '#0f172a', borderRadius: 14, padding: 14, gap: 4, borderWidth: 1, borderColor: '#334155' },
   quoteTitle: { color: '#e2e8f0', fontSize: 15, fontWeight: '600' },
   quoteTotal: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
   note: { color: '#cbd5e1', fontSize: 14, fontStyle: 'italic', marginTop: 4, lineHeight: 20 },
+  // Arabic has no italic: a slanted Arabic text looks broken.
+  upright: { fontStyle: 'normal' },
   button: {
     flexDirection: 'row',
     alignItems: 'center',

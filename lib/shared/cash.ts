@@ -1,4 +1,7 @@
+import { DEFAULT_LOCALE, type Locale } from './generated/i18n';
+import { message } from './i18n';
 import { formatDinars, formatMillimes, readAmount, toMillimes } from './money';
+import { isolateFor, ltrFor } from './words';
 
 /**
  * The cash an artisan takes from a customer and the commission it brings to the platform (P2-05). The server side is
@@ -7,6 +10,10 @@ import { formatDinars, formatMillimes, readAmount, toMillimes } from './money';
  * GET /cash-ledger/interventions/:id/position.
  *
  * Every amount is in dinars, as the server sends it (up to three decimals); the functions here work on whole millimes.
+ *
+ * The sentences are in the catalogue (`cash.*`, French and Arabic, P3-04); a function that returns words takes the language as its
+ * last argument (French when it is left out: the dashboard, which stays French, reads entries with `entryWords` and passes none). An
+ * amount inside an Arabic sentence is set apart from it; a figure alone is returned plain and the screen sets it left to right.
  */
 
 /** The kinds of line of a ledger. */
@@ -141,7 +148,7 @@ export type CashAmountRead = { ok: true; millimes: number } | { ok: false; messa
 const LARGEST_AMOUNT = 99_999_999_999;
 
 /** The amount the artisan typed, checked against what is left to take on the job. */
-export function readCashAmount(text: unknown, position: Pick<CashPosition, 'remaining' | 'currency'>): CashAmountRead {
+export function readCashAmount(text: unknown, position: Pick<CashPosition, 'remaining' | 'currency'>, locale: Locale = DEFAULT_LOCALE): CashAmountRead {
   const read = readAmount(text, LARGEST_AMOUNT);
 
   if (!read.ok) {
@@ -149,31 +156,30 @@ export function readCashAmount(text: unknown, position: Pick<CashPosition, 'rema
       ok: false,
       message:
         read.problem === 'empty'
-          ? 'Entrez le montant reçu du client.'
+          ? message(locale, 'cash.read.empty')
           : read.problem === 'decimals'
-            ? 'Un montant a au plus trois décimales (millimes).'
+            ? message(locale, 'cash.read.decimals')
             : read.problem === 'too-big'
-              ? 'Ce montant est trop grand.'
-              : 'Montant invalide : écrivez par exemple 45 ou 45,500.',
+              ? message(locale, 'cash.read.tooBig')
+              : message(locale, 'cash.read.format', { first: isolateFor(locale, '45'), second: isolateFor(locale, '45,500') }),
     };
   }
 
-  if (read.millimes <= 0) return { ok: false, message: 'Le montant doit être supérieur à 0.' };
+  if (read.millimes <= 0) return { ok: false, message: message(locale, 'cash.read.zero') };
 
   if (position.remaining !== null && read.millimes > toMillimes(position.remaining)) {
-    return { ok: false, message: `Le montant dépasse ce qu’il reste à payer (${formatDinars(position.remaining)}).` };
+    return { ok: false, message: message(locale, 'cash.read.overRemaining', { remaining: isolateFor(locale, formatDinars(position.remaining, undefined, locale)) }) };
   }
 
   return { ok: true, millimes: read.millimes };
 }
 
 /** The sentence after a collection went through. */
-export function collectedWords(answer: Pick<CollectCashAnswer, 'replayed' | 'entry' | 'totals'>): string {
-  const head = answer.replayed
-    ? `Cet encaissement de ${formatDinars(answer.entry.cashAmount)} était déjà enregistré.`
-    : `${formatDinars(answer.entry.cashAmount)} encaissés.`;
+export function collectedWords(answer: Pick<CollectCashAnswer, 'replayed' | 'entry' | 'totals'>, locale: Locale = DEFAULT_LOCALE): string {
+  const amount = isolateFor(locale, formatDinars(answer.entry.cashAmount, undefined, locale));
+  const head = answer.replayed ? message(locale, 'cash.collected.replayed', { amount }) : message(locale, 'cash.collected.done', { amount });
 
-  return `${head} ${balanceSentence(answer.totals)}`;
+  return `${head} ${balanceSentence(answer.totals, locale)}`;
 }
 
 // ----------------------------------------------------------
@@ -193,13 +199,13 @@ export interface LedgerSummary {
 }
 
 /** The balance the artisan owes the platform, in a sentence. */
-export function balanceSentence(totals: Pick<LedgerTotals, 'balance'>): string {
+export function balanceSentence(totals: Pick<LedgerTotals, 'balance'>, locale: Locale = DEFAULT_LOCALE): string {
   const balance = toMillimes(totals.balance);
 
-  if (balance > 0) return `Vous devez ${formatMillimes(balance)} à la plateforme.`;
-  if (balance < 0) return `La plateforme vous doit ${formatMillimes(-balance)}.`;
+  if (balance > 0) return message(locale, 'cash.balance.owes', { amount: isolateFor(locale, formatMillimes(balance, undefined, locale)) });
+  if (balance < 0) return message(locale, 'cash.balance.credit', { amount: isolateFor(locale, formatMillimes(-balance, undefined, locale)) });
 
-  return 'Vous êtes à jour : rien à reverser à la plateforme.';
+  return message(locale, 'cash.balance.clear');
 }
 
 /**
@@ -207,33 +213,35 @@ export function balanceSentence(totals: Pick<LedgerTotals, 'balance'>): string {
  * cash was taken and the commission is a share of it. A ledger that holds only a correction of the back office (a balance at the
  * start, a fix) has a commission with no cash behind it: it says so instead of a "you keep" that would be negative or false.
  */
-function keepsSentence(cash: number, commissionDue: number): string {
-  if (cash === 0 && commissionDue === 0) return 'Aucun encaissement pour le moment.';
+function keepsSentence(cash: number, commissionDue: number, locale: Locale): string {
+  const money = (millimes: number) => isolateFor(locale, formatMillimes(millimes, undefined, locale));
+
+  if (cash === 0 && commissionDue === 0) return message(locale, 'cash.keeps.none');
 
   if (cash > 0) {
-    if (commissionDue >= 0 && commissionDue <= cash) return `Sur ${formatMillimes(cash)} encaissés, vous gardez ${formatMillimes(cash - commissionDue)}.`;
+    if (commissionDue >= 0 && commissionDue <= cash) return message(locale, 'cash.keeps.kept', { cash: money(cash), kept: money(cash - commissionDue) });
 
     return commissionDue > cash
-      ? `Sur ${formatMillimes(cash)} encaissés, la commission due est de ${formatMillimes(commissionDue)}, régularisations comprises.`
-      : `Sur ${formatMillimes(cash)} encaissés, la commission a été corrigée par l’équipe : voir l’historique.`;
+      ? message(locale, 'cash.keeps.commissionOver', { cash: money(cash), due: money(commissionDue) })
+      : message(locale, 'cash.keeps.commissionCorrected', { cash: money(cash) });
   }
 
-  if (cash === 0) return commissionDue > 0 ? 'Ce solde vient de régularisations enregistrées par l’équipe : voir l’historique.' : 'Votre commission a été corrigée par l’équipe : voir l’historique.';
+  if (cash === 0) return commissionDue > 0 ? message(locale, 'cash.keeps.onlyAdjustments') : message(locale, 'cash.keeps.onlyCommissionFix');
 
-  return 'Des encaissements ont été annulés ou corrigés par l’équipe : voir l’historique.';
+  return message(locale, 'cash.keeps.reversed');
 }
 
 /** The top of the earnings screen. */
-export function ledgerSummary(totals: LedgerTotals): LedgerSummary {
+export function ledgerSummary(totals: LedgerTotals, locale: Locale = DEFAULT_LOCALE): LedgerSummary {
   const balance = toMillimes(totals.balance);
   const cash = toMillimes(totals.cashCollected);
   const commissionDue = toMillimes(totals.commissionDue);
 
   return {
     tone: balance > 0 ? 'owed' : balance < 0 ? 'credit' : 'clear',
-    headline: balance > 0 ? 'À reverser à la plateforme' : balance < 0 ? 'La plateforme vous doit' : 'Vous êtes à jour',
-    amountText: formatMillimes(Math.abs(balance)),
-    keepsText: keepsSentence(cash, commissionDue),
+    headline: balance > 0 ? message(locale, 'cash.summary.owed') : balance < 0 ? message(locale, 'cash.summary.credit') : message(locale, 'cash.summary.clear'),
+    amountText: formatMillimes(Math.abs(balance), undefined, locale),
+    keepsText: keepsSentence(cash, commissionDue, locale),
   };
 }
 
@@ -249,33 +257,42 @@ export interface EntryWords {
   detail: string | null;
 }
 
-const signed = (millimes: number): string => (millimes > 0 ? `+${formatMillimes(millimes)}` : formatMillimes(millimes));
+const signed = (millimes: number, locale: Locale): string => (millimes > 0 ? `+${formatMillimes(millimes, undefined, locale)}` : formatMillimes(millimes, undefined, locale));
 
-const missionOf = (entry: Pick<LedgerEntry, 'interventionId'>): string => (entry.interventionId !== null ? ` – mission #${entry.interventionId}` : '');
-
-/** A line of the ledger in words. */
-export function entryWords(entry: LedgerEntry): EntryWords {
+/** A line of the ledger in words. The signed figures are values: the screen sets them left to right. */
+export function entryWords(entry: LedgerEntry, locale: Locale = DEFAULT_LOCALE): EntryWords {
   const commission = toMillimes(entry.commissionAmount);
   const cash = toMillimes(entry.cashAmount);
+  // The number of the mission ("#12") is a value in the middle of an Arabic title.
+  const mission = entry.interventionId !== null ? isolateFor(locale, `#${entry.interventionId}`) : null;
   const title =
     entry.type === 'COLLECTION'
-      ? `Encaissement${missionOf(entry)}`
+      ? mission === null
+        ? message(locale, 'cash.entry.collection')
+        : message(locale, 'cash.entry.collectionMission', { mission })
       : entry.type === 'REMITTANCE'
-        ? 'Versement à la plateforme'
+        ? message(locale, 'cash.entry.remittance')
         : entry.type === 'REVERSAL'
-          ? `Encaissement annulé${missionOf(entry)}`
-          : `Régularisation${missionOf(entry)}`;
+          ? mission === null
+            ? message(locale, 'cash.entry.reversal')
+            : message(locale, 'cash.entry.reversalMission', { mission })
+          : mission === null
+            ? message(locale, 'cash.entry.adjustment')
+            : message(locale, 'cash.entry.adjustmentMission', { mission });
   const parts: string[] = [];
 
-  if (entry.type === 'COLLECTION' && entry.commissionRate !== null) parts.push(`Commission de ${String(Number(entry.commissionRate.toFixed(2))).replace('.', ',')} %`);
-  if (entry.reference) parts.push(`Réf. ${entry.reference}`);
+  if (entry.type === 'COLLECTION' && entry.commissionRate !== null) {
+    parts.push(message(locale, 'cash.entry.commission', { rate: String(Number(entry.commissionRate.toFixed(2))).replace('.', ',') }));
+  }
+  if (entry.reference) parts.push(message(locale, 'cash.entry.reference', { reference: isolateFor(locale, entry.reference) }));
   if (entry.note) parts.push(entry.note);
 
   return {
     title,
-    effect: signed(commission),
+    // Set apart like the cash figure below: a bare sign lands at the wrong end of an Arabic line (French is unchanged).
+    effect: ltrFor(locale, signed(commission, locale)),
     direction: commission > 0 ? 'up' : commission < 0 ? 'down' : 'none',
-    cash: cash === 0 ? null : `Espèces ${signed(cash)}`,
+    cash: cash === 0 ? null : message(locale, 'cash.entry.cash', { amount: ltrFor(locale, signed(cash, locale)) }),
     detail: parts.length ? parts.join(' · ') : null,
   };
 }

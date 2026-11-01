@@ -1,7 +1,10 @@
+import { DEFAULT_LOCALE, INTL_TAGS, type Locale } from './generated/i18n';
 import { canonicalStatus, type CanonicalStatus } from './generated/intervention-status';
 import type { TrackingInterventionInvoice, TrackingInterventionPayment, TrackingInterventionQuote } from './generated/views';
+import { message, messageText } from './i18n';
 import { formatMillimes, toDinars, toMillimes } from './money';
 import type { StatusTone } from './status';
+import { charactersText, isolateFor } from './words';
 
 /**
  * What a customer does from the tracking link alone (P2-06): read the quote and answer it, choose how to pay, read and keep the
@@ -11,6 +14,10 @@ import type { StatusTone } from './status';
  *
  * Amounts reach the page as the figure of a DECIMAL column (a number, or its text: "119.000"); `amountOf` reads both, in whole
  * millimes, and nothing here adds two dinar amounts as floating-point numbers.
+ *
+ * Every sentence is in the catalogue (`customer.*`, French and Arabic, P3-04). A function that returns words takes the language as its last
+ * argument (`locale`, French when it is left out; the dashboard, which stays French, passes none). A function that returns only a value
+ * (an amount, a date) returns it plain, and the screen sets it left to right; a sentence with a value inside sets the value apart itself.
  */
 
 // ----------------------------------------------------------
@@ -24,44 +31,71 @@ export function amountOf(value: unknown): number {
   return Number.isFinite(number) ? toMillimes(number) : 0;
 }
 
-/** The unit a screen writes after an amount: "DT" for the dinar, else the code of the currency. */
-export function currencyUnit(currency: string | null | undefined): string {
-  return !currency || currency === 'TND' ? 'DT' : currency;
+/** The unit a screen writes after an amount: "DT" ("د.ت") for the dinar, else the code of the currency. */
+export function currencyUnit(currency: string | null | undefined, locale: Locale = DEFAULT_LOCALE): string {
+  return !currency || currency === 'TND' ? message(locale, 'money.unit') : currency;
 }
 
-/** An amount as the money screens write it: "119,000 DT". */
-export function moneyText(value: unknown, currency?: string | null): string {
-  return formatMillimes(amountOf(value), currencyUnit(currency));
+/** An amount as the money screens write them: "119,000 DT" ("119,000 د.ت"). */
+export function moneyText(value: unknown, currency?: string | null, locale: Locale = DEFAULT_LOCALE): string {
+  return formatMillimes(amountOf(value), currencyUnit(currency, locale), locale);
 }
 
-const DAY = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Tunis', day: 'numeric', month: 'long', year: 'numeric' });
+/**
+ * The tag each language writes its dates with. French keeps `fr-FR`, the tag these dates were always written with; Arabic is read as it is
+ * written in Tunisia (`ar-TN`: the months are janvier, février... in Arabic letters) with the digits 0 to 9.
+ */
+const DATE_TAGS: Record<Locale, string> = { fr: 'fr-FR', ar: INTL_TAGS.ar };
 
-const HOUR = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Africa/Tunis', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const formatters = new Map<string, Intl.DateTimeFormat>();
 
-/** The hour as people write it in Tunis: "14 h 05". Null when there is none (or it is not a date). */
-export function hourText(iso: string | null | undefined): string | null {
+/** One formatter for each kind and language, made when it is first needed (a phone may lack a language until it is asked for). */
+function formatter(kind: 'day' | 'hour', locale: Locale): Intl.DateTimeFormat {
+  const key = `${kind}:${locale}`;
+  let found = formatters.get(key);
+
+  if (!found) {
+    const options: Intl.DateTimeFormatOptions =
+      kind === 'day'
+        ? { timeZone: 'Africa/Tunis', day: 'numeric', month: 'long', year: 'numeric' }
+        : { timeZone: 'Africa/Tunis', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' };
+
+    found = new Intl.DateTimeFormat(DATE_TAGS[locale], locale === 'ar' ? { ...options, numberingSystem: 'latn' } : options);
+    formatters.set(key, found);
+  }
+
+  return found;
+}
+
+/** The hour as people write it in Tunis: "14 h 05" ("14:05"). Null when there is none (or it is not a date). */
+export function hourText(iso: string | null | undefined, locale: Locale = DEFAULT_LOCALE): string | null {
   if (!iso) return null;
 
   const date = new Date(iso);
 
-  return Number.isNaN(date.getTime()) ? null : HOUR.format(date).replace(':', ' h ');
+  if (Number.isNaN(date.getTime())) return null;
+
+  const text = formatter('hour', locale).format(date);
+  const [hour, minute, ...more] = text.split(':');
+
+  return minute !== undefined && more.length === 0 ? message(locale, 'common.time', { hour, minute }) : text;
 }
 
 /** A date and its hour as people write them in Tunis: "24 octobre 2026 à 14 h 05". Null when there is no date (or it is not one). */
-export function momentText(iso: string | null | undefined): string | null {
-  const day = dayText(iso);
-  const hour = hourText(iso);
+export function momentText(iso: string | null | undefined, locale: Locale = DEFAULT_LOCALE): string | null {
+  const day = dayText(iso, locale);
+  const hour = hourText(iso, locale);
 
-  return day && hour ? `${day} à ${hour}` : day;
+  return day && hour ? message(locale, 'common.dateAt', { day, time: hour }) : day;
 }
 
 /** A date as people write it in Tunis: "24 octobre 2026". Null when there is none (or it is not a date). */
-export function dayText(iso: string | null | undefined): string | null {
+export function dayText(iso: string | null | undefined, locale: Locale = DEFAULT_LOCALE): string | null {
   if (!iso) return null;
 
   const date = new Date(iso);
 
-  return Number.isNaN(date.getTime()) ? null : DAY.format(date);
+  return Number.isNaN(date.getTime()) ? null : formatter('day', locale).format(date);
 }
 
 // ----------------------------------------------------------
@@ -87,13 +121,13 @@ export function quantityText(quantity: number | string): string {
   return String(Math.round(number * 1000) / 1000).replace('.', ',');
 }
 
-export function documentLines(items: readonly Line[] | null | undefined, currency?: string | null): DocumentLine[] {
+export function documentLines(items: readonly Line[] | null | undefined, currency?: string | null, locale: Locale = DEFAULT_LOCALE): DocumentLine[] {
   return (items ?? []).map((line) => ({
     label: line.label,
     description: line.description?.trim() ? line.description.trim() : null,
     quantityText: quantityText(line.quantity),
-    unitText: moneyText(line.unitPrice, currency),
-    totalText: moneyText(line.total, currency),
+    unitText: moneyText(line.unitPrice, currency, locale),
+    totalText: moneyText(line.total, currency, locale),
   }));
 }
 
@@ -105,14 +139,17 @@ export interface DocumentTotals {
   totalText: string;
 }
 
-export function documentTotals(document: { amountHT: number; taxRate: number; taxAmount: number; amountTTC: number; currency?: string | null }): DocumentTotals {
+export function documentTotals(
+  document: { amountHT: number; taxRate: number; taxAmount: number; amountTTC: number; currency?: string | null },
+  locale: Locale = DEFAULT_LOCALE,
+): DocumentTotals {
   const rate = Number(document.taxRate);
 
   return {
-    subtotalText: moneyText(document.amountHT, document.currency),
-    taxLabel: `TVA ${Number.isFinite(rate) ? String(rate).replace('.', ',') : '0'} %`,
-    taxText: moneyText(document.taxAmount, document.currency),
-    totalText: moneyText(document.amountTTC, document.currency),
+    subtotalText: moneyText(document.amountHT, document.currency, locale),
+    taxLabel: message(locale, 'money.taxLabel', { rate: Number.isFinite(rate) ? String(rate).replace('.', ',') : '0' }),
+    taxText: moneyText(document.taxAmount, document.currency, locale),
+    totalText: moneyText(document.amountTTC, document.currency, locale),
   };
 }
 
@@ -126,15 +163,31 @@ export const QUOTE_NOTE_MAX = 500;
 /** The statuses of a mission in which its quotes are no longer answered (quote-decisions.ts there: JOB_STATUSES_CLOSED_TO_QUOTES). */
 const CLOSED_TO_QUOTES: readonly CanonicalStatus[] = ['CANCELLED', 'DISPUTED', 'COMPLETED', 'PAYMENT_PENDING', 'PAID', 'INVOICE_SENT'];
 
-export const QUOTE_WORDS = {
-  closedJob: 'Cette mission n’accepte plus de réponse sur ses devis.',
-  toAnswer: 'Un devis vous attend : acceptez-le, posez une question ou demandez une modification.',
-  beingChanged: 'Vous avez demandé une modification : le technicien modifie le devis, vous pourrez l’accepter dès qu’il vous sera renvoyé.',
-  accepted: 'Vous avez accepté ce devis.',
-  refused: 'Ce devis a été refusé.',
-  cancelled: 'Ce devis a été annulé.',
-  expired: 'Ce devis a expiré. Pour en obtenir un nouveau, écrivez-nous dans « Un problème ? » plus bas sur cette page.',
-};
+export interface QuoteWords {
+  closedJob: string;
+  toAnswer: string;
+  beingChanged: string;
+  accepted: string;
+  refused: string;
+  cancelled: string;
+  expired: string;
+}
+
+/** The sentences of the quote card that do not depend on a date, in a language. */
+export function quoteWords(locale: Locale = DEFAULT_LOCALE): QuoteWords {
+  return {
+    closedJob: message(locale, 'customer.quote.closedJob'),
+    toAnswer: message(locale, 'customer.quote.toAnswer'),
+    beingChanged: message(locale, 'customer.quote.beingChanged'),
+    accepted: message(locale, 'customer.quote.accepted'),
+    refused: message(locale, 'customer.quote.refused'),
+    cancelled: message(locale, 'customer.quote.cancelled'),
+    expired: message(locale, 'customer.quote.expired'),
+  };
+}
+
+/** The same sentences in French. */
+export const QUOTE_WORDS: QuoteWords = quoteWords('fr');
 
 export type CustomerQuoteStage = 'none' | 'to-answer' | 'expired' | 'being-changed' | 'accepted' | 'refused' | 'closed';
 
@@ -168,24 +221,29 @@ const newestFirst = (a: TrackingInterventionQuote, b: TrackingInterventionQuote)
  * back for a change; one sent back for a change cannot be accepted until the technician has sent it again; one that lapsed cannot
  * be accepted either, but can still be asked about or sent back (which is how a new one is obtained).
  */
-export function customerQuote(job: { status?: string | null; quotes?: readonly TrackingInterventionQuote[] | null }, now: Date = new Date()): CustomerQuote {
+export function customerQuote(
+  job: { status?: string | null; quotes?: readonly TrackingInterventionQuote[] | null },
+  now: Date = new Date(),
+  locale: Locale = DEFAULT_LOCALE,
+): CustomerQuote {
+  const words = quoteWords(locale);
   const quotes = [...(job.quotes ?? [])].sort(newestFirst);
   const accepted = quotes.find((quote) => quote.status === 'ACCEPTED');
 
-  if (accepted) return { stage: 'accepted', quote: accepted, ...NOTHING, words: QUOTE_WORDS.accepted };
+  if (accepted) return { stage: 'accepted', quote: accepted, ...NOTHING, words: words.accepted };
 
   const status = canonicalStatus(job.status);
   const out = quotes.find((quote) => quote.status === 'SENT' || quote.status === 'MODIFICATION_REQUESTED');
 
   if (out) {
-    if (status && CLOSED_TO_QUOTES.includes(status)) return { stage: 'closed', quote: out, ...NOTHING, words: QUOTE_WORDS.closedJob };
+    if (status && CLOSED_TO_QUOTES.includes(status)) return { stage: 'closed', quote: out, ...NOTHING, words: words.closedJob };
 
     if (out.status === 'MODIFICATION_REQUESTED') {
-      return { stage: 'being-changed', quote: out, canAccept: false, canRefuse: true, canAsk: true, canRequestChange: true, words: QUOTE_WORDS.beingChanged };
+      return { stage: 'being-changed', quote: out, canAccept: false, canRefuse: true, canAsk: true, canRequestChange: true, words: words.beingChanged };
     }
 
     if (isLapsed(out, now)) {
-      const moment = momentText(out.expiresAt);
+      const moment = momentText(out.expiresAt, locale);
 
       return {
         stage: 'expired',
@@ -194,20 +252,20 @@ export function customerQuote(job: { status?: string | null; quotes?: readonly T
         canRefuse: true,
         canAsk: true,
         canRequestChange: true,
-        words: `${moment ? `Ce devis a expiré le ${moment}.` : QUOTE_WORDS.expired} Vous ne pouvez plus l’accepter : demandez-en un nouveau ou posez une question.`,
+        words: `${moment ? message(locale, 'customer.quote.expiredOn', { moment }) : words.expired} ${message(locale, 'customer.quote.expiredHint')}`,
       };
     }
 
-    return { stage: 'to-answer', quote: out, canAccept: true, canRefuse: true, canAsk: true, canRequestChange: true, words: QUOTE_WORDS.toAnswer };
+    return { stage: 'to-answer', quote: out, canAccept: true, canRefuse: true, canAsk: true, canRequestChange: true, words: words.toAnswer };
   }
 
   const last = quotes[0] ?? null;
 
   if (!last) return { stage: 'none', quote: null, ...NOTHING, words: '' };
-  if (last.status === 'REJECTED') return { stage: 'refused', quote: last, ...NOTHING, words: QUOTE_WORDS.refused };
-  if (last.status === 'EXPIRED') return { stage: 'expired', quote: last, ...NOTHING, words: QUOTE_WORDS.expired };
+  if (last.status === 'REJECTED') return { stage: 'refused', quote: last, ...NOTHING, words: words.refused };
+  if (last.status === 'EXPIRED') return { stage: 'expired', quote: last, ...NOTHING, words: words.expired };
 
-  return { stage: 'closed', quote: last, ...NOTHING, words: QUOTE_WORDS.cancelled };
+  return { stage: 'closed', quote: last, ...NOTHING, words: words.cancelled };
 }
 
 /** True when two reads are of the same version of the same quote: the id and the revision decide (an edit of the quote makes a new revision). */
@@ -230,22 +288,22 @@ export function quoteSignature(state: Pick<CustomerQuote, 'stage' | 'quote'>): s
  * "Valable jusqu’au 31 octobre 2026 à 14 h 05", or "Expiré depuis le 3 octobre 2026 à 09 h 30"; null when the quote has no date. The
  * server ends a quote at an exact moment (so many days after it was sent), not at the end of a day: the hour is told too.
  */
-export function validityWords(quote: Pick<TrackingInterventionQuote, 'expiresAt'>, now: Date = new Date()): string | null {
-  const moment = momentText(quote.expiresAt);
+export function validityWords(quote: Pick<TrackingInterventionQuote, 'expiresAt'>, now: Date = new Date(), locale: Locale = DEFAULT_LOCALE): string | null {
+  const moment = momentText(quote.expiresAt, locale);
 
   if (!moment) return null;
 
-  return isLapsed(quote, now) ? `Expiré depuis le ${moment}` : `Valable jusqu’au ${moment}`;
+  return isLapsed(quote, now) ? message(locale, 'customer.quote.expiredSince', { moment }) : message(locale, 'customer.quote.validUntil', { moment });
 }
 
 export type NoteRead = { ok: true; note: string | undefined } | { ok: false; problem: string };
 
 /** The words the customer wrote with an answer: optional for an acceptance or a refusal, required for a question or a change. */
-export function readQuoteNote(text: unknown, required: boolean): NoteRead {
+export function readQuoteNote(text: unknown, required: boolean, locale: Locale = DEFAULT_LOCALE): NoteRead {
   const note = typeof text === 'string' ? text.trim() : '';
 
-  if (note === '') return required ? { ok: false, problem: 'Écrivez votre question ou votre demande.' } : { ok: true, note: undefined };
-  if ([...note].length > QUOTE_NOTE_MAX) return { ok: false, problem: `Votre message est trop long (${QUOTE_NOTE_MAX} caractères au plus).` };
+  if (note === '') return required ? { ok: false, problem: message(locale, 'customer.quote.noteRequired') } : { ok: true, note: undefined };
+  if ([...note].length > QUOTE_NOTE_MAX) return { ok: false, problem: message(locale, 'customer.quote.noteLong', { max: charactersText(QUOTE_NOTE_MAX, locale) }) };
 
   return { ok: true, note };
 }
@@ -377,6 +435,11 @@ export interface PaymentPanel {
   stage: PaymentStage;
   /** What is asked: the amount of the request, or of the payment that waits. */
   amountText: string | null;
+  /**
+   * The same amount written the same way in every language: what the page compares to know that the amount changed. `amountText` is
+   * written in the language of the page, and a visitor who changes language has not changed the amount.
+   */
+  amountKey: string | null;
   words: string;
   choices: PaymentChoiceView[];
   open: TrackingInterventionPayment | null;
@@ -387,21 +450,31 @@ export interface PaymentPanel {
   card: CardPayment | null;
 }
 
-const CHOICE_WORDS: Record<PaymentChoice, { title: string; detail: string }> = {
-  CASH: { title: 'Espèces', detail: 'Vous remettez la somme au technicien. Notre équipe confirme la réception.' },
-  BANK_TRANSFER: { title: 'Virement bancaire', detail: 'Vous virez la somme sur le compte de l’entreprise, puis vous nous envoyez la référence du virement.' },
-  ONLINE_CARD: { title: 'Carte bancaire', detail: 'Vous payez sur la page sécurisée de notre prestataire de paiement. La confirmation est automatique.' },
-};
+export interface PaymentWords {
+  unavailable: string;
+  cardUnprepared: string;
+  cardLapsed: string;
+  cardReview: string;
+  cardGoToProvider: string;
+  cardTryAgain: string;
+  cardChecking: string;
+}
 
-export const PAYMENT_WORDS = {
-  unavailable: 'Le paiement n’est pas disponible pour le moment.',
-  cardUnprepared: 'Le paiement par carte n’a pas pu être préparé. Réessayez, ou choisissez un autre mode de paiement.',
-  cardLapsed: 'Le délai pour payer par carte est dépassé. Si vous venez de payer, la confirmation arrive dans un instant ; sinon, relancez un paiement par carte.',
-  cardReview: 'Votre paiement par carte est en cours de vérification par notre équipe. Vous n’avez rien à refaire.',
-  cardGoToProvider: 'Continuer vers le paiement',
-  cardTryAgain: 'Réessayer le paiement par carte',
-  cardChecking: 'Nous vérifions votre paiement…',
-};
+/** The sentences of the payment block that do not depend on an amount, in a language. */
+export function paymentWords(locale: Locale = DEFAULT_LOCALE): PaymentWords {
+  return {
+    unavailable: message(locale, 'customer.payment.unavailable'),
+    cardUnprepared: message(locale, 'customer.payment.cardUnprepared'),
+    cardLapsed: message(locale, 'customer.payment.cardLapsed'),
+    cardReview: message(locale, 'customer.payment.cardReview'),
+    cardGoToProvider: message(locale, 'customer.payment.cardGoToProvider'),
+    cardTryAgain: message(locale, 'customer.payment.cardTryAgain'),
+    cardChecking: message(locale, 'customer.payment.cardChecking'),
+  };
+}
+
+/** The same sentences in French. */
+export const PAYMENT_WORDS: PaymentWords = paymentWords('fr');
 
 /** The provider's page is a link the customer is sent to: only an https address is one (anything else is not shown as a button). */
 export function isPayUrl(url: unknown): url is string {
@@ -410,7 +483,7 @@ export function isPayUrl(url: unknown): url is string {
 }
 
 /** The card payment that waits, as the page shows it; null when what waits is not a card payment. */
-export function cardPaymentOf(open: TrackingInterventionPayment | null | undefined, now: Date = new Date()): CardPayment | null {
+export function cardPaymentOf(open: TrackingInterventionPayment | null | undefined, now: Date = new Date(), locale: Locale = DEFAULT_LOCALE): CardPayment | null {
   if (!open || !ONLINE_WAYS.includes(open.method)) return null;
 
   if (open.status === 'AWAITING_CONFIRMATION') return { phase: 'review', payUrl: null, expiresText: null, watch: false };
@@ -419,7 +492,7 @@ export function cardPaymentOf(open: TrackingInterventionPayment | null | undefin
   if (!isPayUrl(open.payUrl)) return { phase: 'unprepared', payUrl: null, expiresText: null, watch: false };
 
   const ends = open.expiresAt ? new Date(open.expiresAt) : null;
-  const expiresText = ends && !Number.isNaN(ends.getTime()) ? hourText(open.expiresAt) : null;
+  const expiresText = ends && !Number.isNaN(ends.getTime()) ? hourText(open.expiresAt, locale) : null;
 
   if (ends && !Number.isNaN(ends.getTime()) && ends.getTime() <= now.getTime()) return { phase: 'lapsed', payUrl: null, expiresText, watch: true };
 
@@ -435,55 +508,64 @@ export function cardCanTryAgain(card: CardPayment | null | undefined): boolean {
   return card?.phase === 'unprepared' || card?.phase === 'lapsed';
 }
 
-function waitingWords(open: TrackingInterventionPayment, amountText: string, card: CardPayment | null): string {
-  if (card) {
-    if (card.phase === 'review') return PAYMENT_WORDS.cardReview;
-    if (card.phase === 'unprepared') return PAYMENT_WORDS.cardUnprepared;
-    if (card.phase === 'lapsed') return PAYMENT_WORDS.cardLapsed;
+function waitingWords(open: TrackingInterventionPayment, amountText: string, card: CardPayment | null, locale: Locale): string {
+  const words = paymentWords(locale);
+  const amount = isolateFor(locale, amountText);
 
-    return `Paiement de ${amountText} par carte en attente${card.expiresText ? `, à terminer avant ${card.expiresText}` : ''}. Réglez sur la page sécurisée du prestataire ; si vous avez déjà payé, la confirmation arrive dans un instant.`;
+  if (card) {
+    if (card.phase === 'review') return words.cardReview;
+    if (card.phase === 'unprepared') return words.cardUnprepared;
+    if (card.phase === 'lapsed') return words.cardLapsed;
+
+    return card.expiresText
+      ? message(locale, 'customer.payment.cardWaitingUntil', { amount, time: isolateFor(locale, card.expiresText) })
+      : message(locale, 'customer.payment.cardWaiting', { amount });
   }
 
   if (open.method === 'BANK_TRANSFER') {
-    return open.reference
-      ? `Virement de ${amountText} en attente de confirmation. Notre équipe le confirmera dès réception.`
-      : `Virement de ${amountText} demandé. Une fois fait, envoyez-nous sa référence : notre équipe confirmera la réception.`;
+    return open.reference ? message(locale, 'customer.payment.transferWaiting', { amount }) : message(locale, 'customer.payment.transferAsked', { amount });
   }
 
-  if (open.method === 'CASH') {
-    return `Paiement de ${amountText} en espèces en attente de confirmation par notre équipe. Si vous n’avez pas encore remis la somme, remettez-la au technicien.`;
-  }
+  if (open.method === 'CASH') return message(locale, 'customer.payment.cashWaiting', { amount });
 
-  return `Paiement de ${amountText} en attente de confirmation.`;
+  return message(locale, 'customer.payment.otherWaiting', { amount });
 }
 
 /**
  * What the payment block of the page shows, from the options the server gave. `null` while there are none (they have not been read,
  * or the read failed): the block is not shown rather than shown wrong.
  */
-export function paymentPanel(options: PaymentOptions | null | undefined, now: Date = new Date()): PaymentPanel | null {
+export function paymentPanel(options: PaymentOptions | null | undefined, now: Date = new Date(), locale: Locale = DEFAULT_LOCALE): PaymentPanel | null {
   if (!options) return null;
 
+  const words = paymentWords(locale);
   const open = options.open ?? null;
-  const amountText = options.amount !== null && options.amount !== undefined ? moneyText(options.amount, options.currency) : open ? moneyText(open.amount, open.currency) : null;
+  const amountText =
+    options.amount !== null && options.amount !== undefined ? moneyText(options.amount, options.currency, locale) : open ? moneyText(open.amount, open.currency, locale) : null;
+  const amountKey =
+    options.amount !== null && options.amount !== undefined ? moneyText(options.amount, options.currency, DEFAULT_LOCALE) : open ? moneyText(open.amount, open.currency, DEFAULT_LOCALE) : null;
   const bank = transferDetails(options);
   const choices = options.methods.map<PaymentChoiceView>((choice) => ({
     method: choice.method,
-    ...CHOICE_WORDS[choice.method],
+    // A way of paying the catalogue does not know shows as the server named it, and with no detail (never the key of a message).
+    title: messageText(locale, `customer.payment.choices.${choice.method}.title`) === null ? choice.method : message(locale, `customer.payment.choices.${choice.method}.title`),
+    detail: messageText(locale, `customer.payment.choices.${choice.method}.detail`) === null ? '' : message(locale, `customer.payment.choices.${choice.method}.detail`),
     available: choice.available,
+    // The server's own sentence: it comes in the language of the request.
     reason: choice.reason,
   }));
 
   // A payment that waits comes first: cash an artisan declared leaves nothing to pay (the job reads as paid), and is still to be confirmed.
   if (open) {
-    const waitingAmount = moneyText(open.amount, open.currency);
-    const card = cardPaymentOf(open, now);
+    const waitingAmount = moneyText(open.amount, open.currency, locale);
+    const card = cardPaymentOf(open, now, locale);
 
     return {
       stage: 'waiting',
       // What is asked is what the payment that waits is for (a transfer to make is for that amount, whatever the invoice asks now).
       amountText: waitingAmount,
-      words: waitingWords(open, waitingAmount, card),
+      amountKey: moneyText(open.amount, open.currency, DEFAULT_LOCALE),
+      words: waitingWords(open, waitingAmount, card, locale),
       choices,
       open,
       bank: open.method === 'BANK_TRANSFER' ? bank : null,
@@ -492,20 +574,33 @@ export function paymentPanel(options: PaymentOptions | null | undefined, now: Da
     };
   }
 
-  if (options.document === null) return { stage: 'none', amountText: null, words: '', choices, open: null, bank: null, canSendReference: false, card: null };
+  if (options.document === null) return { stage: 'none', amountText: null, amountKey: null, words: '', choices, open: null, bank: null, canSendReference: false, card: null };
 
   const total = amountOf(options.total);
 
   if (total > 0 && amountOf(options.received) >= total) {
-    return { stage: 'paid', amountText: moneyText(options.received, options.currency), words: `Le paiement de ${moneyText(options.received, options.currency)} est enregistré. Merci.`, choices: [], open: null, bank: null, canSendReference: false, card: null };
+    const receivedText = moneyText(options.received, options.currency, locale);
+
+    return {
+      stage: 'paid',
+      amountText: receivedText,
+      amountKey: moneyText(options.received, options.currency, DEFAULT_LOCALE),
+      words: message(locale, 'customer.payment.paid', { amount: isolateFor(locale, receivedText) }),
+      choices: [],
+      open: null,
+      bank: null,
+      canSendReference: false,
+      card: null,
+    };
   }
 
-  if (!options.canPay) return { stage: 'blocked', amountText, words: options.reason || PAYMENT_WORDS.unavailable, choices, open: null, bank: null, canSendReference: false, card: null };
+  if (!options.canPay) return { stage: 'blocked', amountText, amountKey, words: options.reason || words.unavailable, choices, open: null, bank: null, canSendReference: false, card: null };
 
   return {
     stage: 'choose',
     amountText,
-    words: amountText ? `Il reste ${amountText} à payer. Choisissez comment vous payez.` : 'Choisissez comment vous payez.',
+    amountKey,
+    words: amountText ? message(locale, 'customer.payment.remaining', { amount: isolateFor(locale, amountText) }) : message(locale, 'customer.payment.choose'),
     choices,
     open: null,
     bank,
@@ -515,12 +610,12 @@ export function paymentPanel(options: PaymentOptions | null | undefined, now: Da
 }
 
 /** The state of the payment block in one string: it changes when the stage, the payment that waits (its status, its reference) or the amount does, and only then. */
-export function paymentSignature(panel: Pick<PaymentPanel, 'stage' | 'open' | 'amountText'> & { card?: CardPayment | null } | null | undefined): string {
+export function paymentSignature(panel: Pick<PaymentPanel, 'stage' | 'open' | 'amountKey'> & { card?: CardPayment | null } | null | undefined): string {
   if (!panel) return 'none';
 
   const open = panel.open;
 
-  return [panel.stage, open ? open.id : '', open ? open.status : '', open ? (open.reference ?? '') : '', panel.amountText ?? '', panel.card?.phase ?? ''].join(':');
+  return [panel.stage, open ? open.id : '', open ? open.status : '', open ? (open.reference ?? '') : '', panel.amountKey ?? '', panel.card?.phase ?? ''].join(':');
 }
 
 /** The page reads the payment options once there is a quote that was accepted, or an invoice, and the request is not cancelled. */
@@ -591,28 +686,45 @@ export interface PaymentReturn {
   again: boolean;
 }
 
-export const RETURN_WORDS = {
-  paid: 'Paiement reçu. Merci !',
-  waiting: 'Votre paiement n’est pas encore confirmé. Si vous l’avez effectué, cela peut prendre un instant : cette page se met à jour toute seule. Si vous y avez renoncé, reprenez-le depuis le suivi de votre demande.',
-  failed: 'Aucun paiement par carte n’est en attente pour cette demande. Si votre carte a pourtant été débitée, ne payez pas une seconde fois : le suivi de votre demande montre ce qui est enregistré, et notre équipe vérifie. Vous pouvez aussi réessayer depuis ce suivi.',
-  unknown: 'Nous n’avons pas pu vérifier votre paiement pour le moment. Rouvrez le suivi de votre demande dans quelques instants.',
-  lost: 'Nous n’avons pas retrouvé votre demande dans ce navigateur. Si vous avez payé, votre paiement est pris en compte dès que le prestataire nous le confirme. Pour suivre votre demande, ouvrez son suivi avec le lien que nous vous avons envoyé.',
-  tooLong: 'Nous n’avons pas encore reçu la confirmation de votre banque. Si vous avez payé, elle arrivera : retrouvez-la dans le suivi de votre demande.',
-};
+export interface ReturnWords {
+  paid: string;
+  waiting: string;
+  failed: string;
+  unknown: string;
+  lost: string;
+  tooLong: string;
+}
+
+/** The sentences of the page the card provider sends the customer back to, in a language. */
+export function returnWords(locale: Locale = DEFAULT_LOCALE): ReturnWords {
+  return {
+    paid: message(locale, 'customer.returns.paid'),
+    waiting: message(locale, 'customer.returns.waiting'),
+    failed: message(locale, 'customer.returns.failed'),
+    unknown: message(locale, 'customer.returns.unknown'),
+    lost: message(locale, 'customer.returns.lost'),
+    tooLong: message(locale, 'customer.returns.tooLong'),
+  };
+}
+
+/** The same sentences in French. */
+export const RETURN_WORDS: ReturnWords = returnWords('fr');
 
 /** What the return page says, from the options the server gave once it had asked the provider. `null`: the options could not be read. */
-export function paymentReturn(panel: PaymentPanel | null | undefined): PaymentReturn {
-  if (!panel) return { verdict: 'unknown', words: RETURN_WORDS.unknown, again: false };
+export function paymentReturn(panel: PaymentPanel | null | undefined, locale: Locale = DEFAULT_LOCALE): PaymentReturn {
+  const words = returnWords(locale);
 
-  if (panel.stage === 'paid') return { verdict: 'paid', words: RETURN_WORDS.paid, again: false };
+  if (!panel) return { verdict: 'unknown', words: words.unknown, again: false };
+
+  if (panel.stage === 'paid') return { verdict: 'paid', words: words.paid, again: false };
 
   if (panel.stage === 'waiting' && panel.card) {
-    if (panel.card.phase === 'review') return { verdict: 'review', words: PAYMENT_WORDS.cardReview, again: false };
-    if (panel.card.phase === 'ready' || panel.card.phase === 'lapsed') return { verdict: 'waiting', words: RETURN_WORDS.waiting, again: true };
+    if (panel.card.phase === 'review') return { verdict: 'review', words: paymentWords(locale).cardReview, again: false };
+    if (panel.card.phase === 'ready' || panel.card.phase === 'lapsed') return { verdict: 'waiting', words: words.waiting, again: true };
   }
 
   // The payment was refused, lapsed or cancelled (nothing waits any more and nothing is paid), or what waits is not a card payment.
-  return { verdict: 'failed', words: RETURN_WORDS.failed, again: false };
+  return { verdict: 'failed', words: words.failed, again: false };
 }
 
 /**
@@ -639,23 +751,26 @@ export const RETURN_CHECK_EVERY_MS = 4000;
 export type ReferenceRead = { ok: true; reference: string } | { ok: false; problem: string };
 
 /** The reference of a transfer, as the customer typed it. */
-export function readTransferReference(text: unknown): ReferenceRead {
+export function readTransferReference(text: unknown, locale: Locale = DEFAULT_LOCALE): ReferenceRead {
   const reference = typeof text === 'string' ? text.trim() : '';
 
-  if (reference === '') return { ok: false, problem: 'Indiquez la référence de votre virement.' };
-  if ([...reference].length > PAYMENT_REFERENCE_MAX) return { ok: false, problem: `La référence est trop longue (${PAYMENT_REFERENCE_MAX} caractères au plus).` };
+  if (reference === '') return { ok: false, problem: message(locale, 'customer.payment.referenceRequired') };
+  if ([...reference].length > PAYMENT_REFERENCE_MAX) return { ok: false, problem: message(locale, 'customer.payment.referenceLong', { max: charactersText(PAYMENT_REFERENCE_MAX, locale) }) };
 
   return { ok: true, reference };
 }
 
-const METHOD_WORDS: Record<string, string> = { CASH: 'Espèces', BANK_TRANSFER: 'Virement', ONLINE: 'Carte', ONLINE_CARD: 'Carte' };
+/** The words of a way of paying (`customer.payment.methods.*`), by the spelling of the payment row. */
+const METHOD_KEYS: Record<string, 'cash' | 'transfer' | 'card'> = { CASH: 'cash', BANK_TRANSFER: 'transfer', ONLINE: 'card', ONLINE_CARD: 'card' };
 
-const PAYMENT_STATUS_WORDS: Record<string, { words: string; tone: StatusTone }> = {
-  AWAITING_CONFIRMATION: { words: 'En attente de confirmation', tone: 'warning' },
-  PAID: { words: 'Reçu', tone: 'success' },
-  PARTIALLY_REFUNDED: { words: 'Remboursé en partie', tone: 'info' },
-  REFUNDED: { words: 'Remboursé', tone: 'info' },
-  FAILED: { words: 'Échoué', tone: 'danger' },
+type PaymentStatusKey = 'awaitingConfirmation' | 'awaitingPayment' | 'received' | 'partlyRefunded' | 'refunded' | 'failed';
+
+const PAYMENT_STATUS_WORDS: Record<string, { key: PaymentStatusKey; tone: StatusTone }> = {
+  AWAITING_CONFIRMATION: { key: 'awaitingConfirmation', tone: 'warning' },
+  PAID: { key: 'received', tone: 'success' },
+  PARTIALLY_REFUNDED: { key: 'partlyRefunded', tone: 'info' },
+  REFUNDED: { key: 'refunded', tone: 'info' },
+  FAILED: { key: 'failed', tone: 'danger' },
 };
 
 export interface PaymentLine {
@@ -668,29 +783,30 @@ export interface PaymentLine {
 }
 
 /** How a payment is told: by its status, except that a request for cash or a transfer that is still "pending" waits for the team like the others. */
-function paymentStatusOf(payment: Pick<TrackingInterventionPayment, 'status' | 'method'> & { payUrl?: string | null }): { words: string; tone: StatusTone } | undefined {
+function paymentStatusOf(payment: Pick<TrackingInterventionPayment, 'status' | 'method'> & { payUrl?: string | null }): { key: PaymentStatusKey; tone: StatusTone } | undefined {
   if (payment.status === 'PENDING' && !ONLINE_WAYS.includes(payment.method)) return PAYMENT_STATUS_WORDS.AWAITING_CONFIRMATION;
   // A card payment the provider has taken waits for the customer's payment; one it never took is not a payment.
-  if (payment.status === 'PENDING' && isPayUrl(payment.payUrl)) return { words: 'En attente de paiement', tone: 'warning' };
+  if (payment.status === 'PENDING' && isPayUrl(payment.payUrl)) return { key: 'awaitingPayment', tone: 'warning' };
 
   return PAYMENT_STATUS_WORDS[payment.status];
 }
 
 /** The payments the customer is told about: the ones that were asked for and not cancelled. A card request nobody could pay is not one. */
-export function paymentLines(payments: readonly TrackingInterventionPayment[] | null | undefined): PaymentLine[] {
+export function paymentLines(payments: readonly TrackingInterventionPayment[] | null | undefined, locale: Locale = DEFAULT_LOCALE): PaymentLine[] {
   return [...(payments ?? [])]
     .filter((payment) => paymentStatusOf(payment) !== undefined)
     .sort((a, b) => a.id - b.id)
     .map((payment) => {
       const status = paymentStatusOf(payment)!;
+      const method = METHOD_KEYS[payment.method];
 
       return {
         id: payment.id,
-        methodText: METHOD_WORDS[payment.method] ?? payment.method,
-        amountText: moneyText(payment.amount, payment.currency),
-        statusWords: status.words,
+        methodText: method ? message(locale, `customer.payment.methods.${method}`) : payment.method,
+        amountText: moneyText(payment.amount, payment.currency, locale),
+        statusWords: message(locale, `customer.payment.statuses.${status.key}`),
         tone: status.tone,
-        dateText: dayText(payment.confirmedAt ?? payment.requestedAt ?? payment.createdAt),
+        dateText: dayText(payment.confirmedAt ?? payment.requestedAt ?? payment.createdAt, locale),
       };
     });
 }
@@ -805,52 +921,55 @@ export function invoiceFileName(number: string): string {
   return slug ? `facture-${slug}` : 'facture';
 }
 
-/** What the page knows about where the PDF files are (the address of the server and the link of the request). */
+/** What the page knows about where the PDF files are (the address of the server and the link of the request), and the language it speaks. */
 export interface InvoiceDocumentOptions {
   pdf?: GuestPdfLinks | null;
+  /** The language of the words of the invoice page (French when left out). */
+  locale?: Locale;
 }
 
 /** The invoice as the page shows, prints and offers it; null when there is none (a draft is not the customer's, the server does not send it). */
 export function invoiceDocument(invoice: TrackingInterventionInvoice | null | undefined, options: InvoiceDocumentOptions = {}): InvoiceDocument | null {
   if (!invoice || invoice.status === 'DRAFT') return null;
 
+  const locale = options.locale ?? DEFAULT_LOCALE;
   const pdf = options.pdf ?? NO_PDF_LINKS;
   const paid = invoice.status === 'PAID' || invoice.paymentStatus === 'PAID';
-  const paidDay = dayText(invoice.paidAt);
+  const paidDay = dayText(invoice.paidAt, locale);
   // The PDF the server draws is the invoice as it stands; an uploaded file (an older invoice may have one) is the fallback.
   const link = pdf.invoice ?? pdfLink(invoice.pdfUrl);
   const { statusWords, tone } =
     invoice.status === 'CANCELLED'
-      ? { statusWords: 'Facture annulée', tone: 'danger' as StatusTone }
+      ? { statusWords: message(locale, 'customer.invoice.cancelled'), tone: 'danger' as StatusTone }
       : paid
-        ? { statusWords: paidDay ? `Payée le ${paidDay}` : 'Payée', tone: 'success' as StatusTone }
-        : { statusWords: 'À payer', tone: 'warning' as StatusTone };
-  const issued = dayText(invoice.issuedAt ?? invoice.sentAt ?? invoice.createdAt);
+        ? { statusWords: paidDay ? message(locale, 'customer.invoice.paidOn', { day: paidDay }) : message(locale, 'customer.invoice.paid'), tone: 'success' as StatusTone }
+        : { statusWords: message(locale, 'customer.invoice.toPay'), tone: 'warning' as StatusTone };
+  const issued = dayText(invoice.issuedAt ?? invoice.sentAt ?? invoice.createdAt, locale);
   const currency = invoice.currency;
   const stamp = amountOf(invoice.stampDuty);
   const credited = amountOf(invoice.creditedAmount);
   const toPay = amountOf(invoice.amountTTC) + stamp;
   const notes = [...(invoice.creditNotes ?? [])].sort((a, b) => a.id - b.id);
   const creditNotes: CreditNoteLine[] = notes.map((note) => {
-    const day = dayText(note.issuedAt ?? note.createdAt);
+    const day = dayText(note.issuedAt ?? note.createdAt, locale);
 
     return {
       id: note.id,
       number: note.creditNoteNumber,
-      issuedText: day ? `Émis le ${day}` : null,
+      issuedText: day ? message(locale, 'customer.invoice.creditNoteIssuedOn', { day }) : null,
       reason: text(note.reason),
       // A real minus sign (U+2212): a screen reader says "moins" for it, and drops a hyphen.
-      amountText: `\u2212 ${moneyText(toDinars(amountOf(note.amountTTC) + amountOf(note.stampDuty)), currency)}`,
+      amountText: `\u2212 ${moneyText(toDinars(amountOf(note.amountTTC) + amountOf(note.stampDuty)), currency, locale)}`,
       href: pdf.creditNote(note.id),
     };
   });
 
   return {
     number: invoice.invoiceNumber,
-    title: `Facture ${invoice.invoiceNumber}`,
+    title: message(locale, 'customer.invoice.title', { number: isolateFor(locale, invoice.invoiceNumber) }),
     statusWords,
     tone,
-    issuedText: issued ? `Émise le ${issued}` : null,
+    issuedText: issued ? message(locale, 'customer.invoice.issuedOn', { day: issued }) : null,
     company: {
       name: text(invoice.companyName),
       taxId: text(invoice.companyTaxId),
@@ -864,15 +983,15 @@ export function invoiceDocument(invoice: TrackingInterventionInvoice | null | un
     client: { name: text(invoice.clientName), address: text(invoice.clientAddress), phone: text(invoice.clientPhone), email: text(invoice.clientEmail), taxId: text(invoice.clientTaxId) },
     service: text(invoice.subServiceName) ?? text(invoice.interventionDescription),
     address: text(invoice.interventionAddress),
-    lines: documentLines(invoice.items, currency),
+    lines: documentLines(invoice.items, currency, locale),
     totals: {
-      ...documentTotals(invoice),
-      stampText: stamp > 0 ? moneyText(toDinars(stamp), currency) : null,
-      toPayText: moneyText(toDinars(toPay), currency),
-      toPayLabel: tone === 'warning' ? 'Total à payer' : 'Total facturé',
+      ...documentTotals(invoice, locale),
+      stampText: stamp > 0 ? moneyText(toDinars(stamp), currency, locale) : null,
+      toPayText: moneyText(toDinars(toPay), currency, locale),
+      toPayLabel: tone === 'warning' ? message(locale, 'customer.invoice.totalToPay') : message(locale, 'customer.invoice.totalBilled'),
       creditNotes,
-      netToPayText: credited > 0 || creditNotes.length > 0 ? moneyText(toDinars(Math.max(toPay - credited, 0)), currency) : null,
-      netLabel: tone === 'warning' ? 'Net à payer' : 'Net de la facture',
+      netToPayText: credited > 0 || creditNotes.length > 0 ? moneyText(toDinars(Math.max(toPay - credited, 0)), currency, locale) : null,
+      netLabel: tone === 'warning' ? message(locale, 'customer.invoice.netToPay') : message(locale, 'customer.invoice.netOfInvoice'),
     },
     legalMentions: text(invoice.legalMentions),
     paymentTerms: text(invoice.paymentTerms),

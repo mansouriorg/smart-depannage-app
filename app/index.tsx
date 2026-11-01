@@ -3,10 +3,14 @@ import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 
 // ✅ IMPORT POUR VÉRIFIER SI UNE SESSION EXISTE
+import { BRAND_NAME } from '../constants/brand';
 import { getRefreshToken, getToken } from '../services/api';
+import { useI18n } from '../services/i18n';
+import { spacing } from '../services/i18n-core';
 
 export default function Index() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   
   // Animation Values
   const fadeAnim = useRef(new Animated.Value(0)).current; 
@@ -69,14 +73,14 @@ export default function Index() {
         </View>
         
         {/* TEXTE */}
-        <Text style={styles.title}>Smart Dépannage</Text>
-        <Text style={styles.subtitle}>Votre expert à portée de main</Text>
+        <Text style={styles.title}>{BRAND_NAME}</Text>
+        <Text style={styles.subtitle}>{t('app.splash.tagline')}</Text>
       </Animated.View>
       
       {/* FOOTER CHARGEMENT */}
       <View style={styles.footer}>
-        <ActivityIndicator color="#D4AF37" style={{ marginRight: 10 }} />
-        <Text style={styles.footerText}>Chargement...</Text>
+        <ActivityIndicator color="#D4AF37" style={{ marginEnd: 10 }} />
+        <Text style={[styles.footerText, { letterSpacing: spacing(locale, 2) }]}>{t('app.splash.loading')}</Text>
       </View>
     </View>
   );
@@ -133,7 +137,6 @@ const styles = StyleSheet.create({
     color: '#D4AF37',
     fontSize: 14,
     fontWeight: '600',
-    letterSpacing: 2,
     textTransform: 'uppercase',
   }
 });

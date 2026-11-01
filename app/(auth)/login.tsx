@@ -13,10 +13,14 @@ import {
 } from 'react-native';
 
 // ✅ IMPORT API SERVICE
+import { LanguageLink } from '@/components/LanguageLink';
+import { BRAND_NAME } from '../../constants/brand';
 import api, { saveTokens } from '../../services/api';
+import { useI18n } from '../../services/i18n';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { t, onSignedIn } = useI18n();
   
   // Aucun identifiant pré-rempli : un mot de passe par défaut dans l'écran
   // est un mot de passe par défaut en production.
@@ -27,7 +31,7 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     // 1. Basic Validation
     if (!email || !password) {
-      Alert.alert('Erreur', 'Veuillez entrer votre email et votre mot de passe.');
+      Alert.alert(t('common.states.error'), t('app.login.missingFields'));
       return;
     }
 
@@ -45,11 +49,14 @@ export default function LoginScreen() {
       const { accessToken, refreshToken } = response.data;
 
       if (!accessToken) {
-        throw new Error("Token manquant dans la réponse du serveur.");
+        throw new Error('Missing token in the server response.');
       }
 
       // 4. Save both tokens securely on the device
       await saveTokens({ accessToken, refreshToken });
+
+      // The account has a language on the server: the app keeps the one chosen on this phone, or takes the account's (P3-04).
+      void onSignedIn(response.data.user?.locale);
       
       // 5. Navigate to the Main App (Tabs)
       router.replace('/(tabs)'); 
@@ -58,11 +65,11 @@ export default function LoginScreen() {
       // Display a friendly error message (never log credentials or tokens)
       const message =
         error.response?.status === 429
-          ? "Trop de tentatives. Réessayez dans quelques minutes."
-          : error.response?.data?.message || "Échec de la connexion. Vérifiez vos identifiants ou votre réseau.";
+          ? t('app.login.tooManyAttempts')
+          : error.response?.data?.message || t('app.login.failed');
       const displayMessage = Array.isArray(message) ? message[0] : message;
       
-      Alert.alert("Erreur de connexion", displayMessage);
+      Alert.alert(t('app.login.failedTitle'), displayMessage);
     } finally {
       setLoading(false);
     }
@@ -78,18 +85,18 @@ export default function LoginScreen() {
         {/* LOGO AREA */}
         <View style={styles.logoContainer}>
           <Text style={styles.logoIcon}>🛠️</Text>
-          <Text style={styles.logoText}>Smart Dépannage</Text>
-          <Text style={styles.subtitle}>Espace Artisan</Text>
+          <Text style={styles.logoText}>{BRAND_NAME}</Text>
+          <Text style={styles.subtitle}>{t('app.login.subtitle')}</Text>
         </View>
 
         {/* FORM INPUTS */}
         <View style={styles.form}>
           
           {/* EMAIL INPUT */}
-          <Text style={styles.label}>Adresse Email</Text>
+          <Text style={styles.label}>{t('app.login.email')}</Text>
           <TextInput 
-            style={styles.input} 
-            placeholder="technicien@smart-depannage.com" 
+            style={[styles.input, styles.ltrInput]} 
+            placeholder={t('app.login.emailPlaceholder')} 
             placeholderTextColor="#999"
             value={email}
             onChangeText={setEmail}
@@ -98,10 +105,10 @@ export default function LoginScreen() {
           />
 
           {/* PASSWORD INPUT */}
-          <Text style={styles.label}>Mot de passe</Text>
+          <Text style={styles.label}>{t('app.login.password')}</Text>
           <TextInput 
             style={styles.input} 
-            placeholder="Votre mot de passe secret" 
+            placeholder={t('app.login.passwordPlaceholder')} 
             placeholderTextColor="#999"
             value={password}
             onChangeText={setPassword}
@@ -117,9 +124,12 @@ export default function LoginScreen() {
             {loading ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text style={styles.loginButtonText}>Se connecter</Text>
+              <Text style={styles.loginButtonText}>{t('app.login.submit')}</Text>
             )}
           </TouchableOpacity>
+
+          {/* LANGUAGE (P3-04): before signing in there is no profile screen to choose it on */}
+          <LanguageLink />
         </View>
 
       </View>
@@ -174,6 +184,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
     color: '#0f172a',
+  },
+  // An address is written left to right, whatever the language of the screen.
+  ltrInput: {
+    writingDirection: 'ltr',
   },
   loginButton: {
     backgroundColor: '#007AFF', // iOS Blue

@@ -16,10 +16,13 @@ import {
 } from 'react-native';
 
 import { call } from '../../services/call';
+import { useI18n } from '../../services/i18n';
+import { mirrorStyle, spacing } from '../../services/i18n-core';
 import { isOwnMission } from '../../services/mission-steps';
 import { sendQuote } from '../../services/money-screens';
 // 🧩 The quote: what it starts from, how it is checked, how it is added up and what the server takes (P2-05)
 import {
+  DEFAULT_LOCALE,
   MAX_QUOTE_LINES,
   QUOTE_LIMITS,
   VALIDITY_CHOICES,
@@ -29,6 +32,7 @@ import {
   draftFromQuote,
   formatMillimes,
   isBlankLine,
+  isolateFor,
   lineFromChoice,
   newLine,
   prefillDraft,
@@ -42,6 +46,8 @@ import {
   type ArtisanIntervention,
   type ArtisanInterventionQuote,
   type CatalogChoice,
+  type Locale,
+  type Translate,
   type PublicCategory,
   type QuoteDraft,
   type QuoteBody,
@@ -50,21 +56,22 @@ import {
 } from '@/lib/shared';
 
 /** The question before the quote leaves, in the words of what is about to happen. */
-function confirmWords(editing: ArtisanInterventionQuote | null, total: string): { title: string; message: string; action: string } {
-  if (!editing) return { title: 'Envoyer le devis ?', message: `Total : ${total} TTC.\nLe client le reçoit tout de suite.`, action: 'Envoyer' };
+function confirmWords(editing: ArtisanInterventionQuote | null, total: string, t: Translate): { title: string; message: string; action: string } {
+  if (!editing) return { title: t('app.quote.confirm.sendTitle'), message: t('app.quote.confirm.sendMessage', { total }), action: t('app.quote.confirm.sendAction') };
 
   if (editing.status === 'MODIFICATION_REQUESTED') {
-    return { title: 'Renvoyer le devis ?', message: `Nouveau total : ${total} TTC.\nLe client le reçoit de nouveau tout de suite et peut l’accepter.`, action: 'Renvoyer' };
+    return { title: t('app.quote.confirm.resendTitle'), message: t('app.quote.confirm.resendMessage', { total }), action: t('app.quote.confirm.resendAction') };
   }
 
-  return { title: 'Enregistrer les modifications ?', message: `Nouveau total : ${total} TTC.\nLe client verra le devis modifié.`, action: 'Enregistrer' };
+  return { title: t('app.quote.confirm.saveTitle'), message: t('app.quote.confirm.saveMessage', { total }), action: t('app.quote.confirm.saveAction') };
 }
 
 /** The words of a number of days: "3 jours". */
-const days = (count: number) => `${count} jour${count > 1 ? 's' : ''}`;
+const days = (count: number, t: Translate) => t('app.quote.days', { count });
 
 export default function QuoteScreen() {
   const router = useRouter();
+  const { t, locale } = useI18n();
   const params = useLocalSearchParams<{ id?: string | string[]; edit?: string | string[] }>();
   const rawId = Array.isArray(params.id) ? params.id[0] : params.id;
   const rawEdit = Array.isArray(params.edit) ? params.edit[0] : params.edit;
@@ -93,6 +100,12 @@ export default function QuoteScreen() {
   const leaving = useRef(false);
   const dirtyNow = useRef(false);
   const navigation = useNavigation();
+  // The language when the screen was opened: the loading effect below must not start again, and lose the draft, if the language changes.
+  const said = useRef({ t, locale });
+
+  useEffect(() => {
+    said.current = { t, locale };
+  });
 
   const leave = useCallback(() => {
     if (router.canGoBack()) router.back();
@@ -115,8 +128,10 @@ export default function QuoteScreen() {
     setShowProblems(false);
     setShowCatalog(false);
 
+    const { t: say, locale: lang } = said.current;
+
     if (!id || (rawEdit !== undefined && rawEdit !== '' && parsedEdit === null)) {
-      setBlocked('Ce lien ne correspond à aucun devis de vos missions.');
+      setBlocked(say('app.quote.linkInvalid'));
       setLoading(false);
       return;
     }
@@ -131,11 +146,11 @@ export default function QuoteScreen() {
         if (cancelled || onScreen.current !== wanted) return;
 
         if (!isOwnMission(job)) {
-          setBlocked('Cette mission ne vous est plus attribuée.');
+          setBlocked(say('app.mission.notYours'));
           return;
         }
 
-        const reason = quoteBlock(job, parsedEdit);
+        const reason = quoteBlock(job, parsedEdit, lang);
 
         if (reason) {
           setBlocked(reason);
@@ -143,7 +158,8 @@ export default function QuoteScreen() {
         }
 
         const target = parsedEdit === null ? null : (job.quotes ?? []).find((quote) => quote.id === parsedEdit) ?? null;
-        const start = target ? draftFromQuote(target) : prefillDraft(job);
+        // The title and the first line go to the customer, whose language this screen does not know: they start in French, the language of the documents, and are the technician's to change.
+        const start = target ? draftFromQuote(target) : prefillDraft(job, undefined, DEFAULT_LOCALE);
 
         initial.current = JSON.stringify(start);
         setMission(job);
@@ -152,7 +168,7 @@ export default function QuoteScreen() {
       } catch (error) {
         if (cancelled || onScreen.current !== wanted) return;
 
-        setBlocked(apiErrorMessage(error, 'Impossible de charger la mission. Vérifiez votre connexion et réessayez.'));
+        setBlocked(apiErrorMessage(error, say('app.quote.loadFailed')));
       } finally {
         if (!cancelled && onScreen.current === wanted) setLoading(false);
       }
@@ -177,12 +193,12 @@ export default function QuoteScreen() {
   }, [id, rawEdit, parsedEdit]);
 
   const choices = useMemo<CatalogChoice[]>(
-    () => (mission ? catalogChoices(catalog, mission.serviceType, mission.urgency) : []),
-    [catalog, mission],
+    () => (mission ? catalogChoices(catalog, mission.serviceType, mission.urgency, locale) : []),
+    [catalog, mission, locale],
   );
 
   const preview = useMemo(() => (draft ? previewOf(draft) : null), [draft]);
-  const problems = useMemo<QuoteProblem[]>(() => (draft ? readQuote(draft).problems : []), [draft]);
+  const problems = useMemo<QuoteProblem[]>(() => (draft ? readQuote(draft, locale).problems : []), [draft, locale]);
 
   // 3. Editing the draft
   const change = (patch: Partial<QuoteDraft>) => setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -199,9 +215,9 @@ export default function QuoteScreen() {
       return;
     }
 
-    Alert.alert(`Supprimer la ligne ${index + 1} ?`, line.label.trim() || undefined, [
-      { text: 'Garder', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: () => removeLine(line.key) },
+    Alert.alert(t('app.quote.removeTitle', { number: index + 1 }), line.label.trim() || undefined, [
+      { text: t('app.quote.keep'), style: 'cancel' },
+      { text: t('app.quote.remove'), style: 'destructive', onPress: () => removeLine(line.key) },
     ]);
   };
 
@@ -249,10 +265,13 @@ export default function QuoteScreen() {
         if (!dirtyNow.current) return;
 
         event.preventDefault();
-        Alert.alert('Abandonner le devis ?', 'Ce que vous avez saisi ne sera pas gardé.', [
-          { text: 'Continuer', style: 'cancel' },
+
+        const say = said.current.t;
+
+        Alert.alert(say('app.quote.abandonTitle'), say('app.quote.abandonMessage'), [
+          { text: say('app.quote.continue'), style: 'cancel' },
           {
-            text: 'Abandonner',
+            text: say('app.quote.abandon'),
             style: 'destructive',
             onPress: () => {
               leaving.current = true;
@@ -275,22 +294,22 @@ export default function QuoteScreen() {
     if (working.current || finished.current || !draft || !mission) return;
 
     const mode = editing ? 'update' : 'create';
-    const built = buildQuote(draft, new Date(), mode);
+    const built = buildQuote(draft, new Date(), mode, locale);
 
     if (!built.ok) {
       setShowProblems(true);
-      Alert.alert('Devis incomplet', built.problems[0].message);
+      Alert.alert(t('app.quote.incompleteTitle'), built.problems[0].message);
       return;
     }
 
-    const total = formatMillimes(built.totals.amountTTC);
-    const words = confirmWords(editing, total);
+    const total = formatMillimes(built.totals.amountTTC, undefined, locale);
+    const words = confirmWords(editing, total, t);
 
     Alert.alert(
       words.title,
       words.message,
       [
-        { text: 'Annuler', style: 'cancel' },
+        { text: t('common.actions.cancel'), style: 'cancel' },
         {
           text: words.action,
           onPress: () => {
@@ -331,22 +350,25 @@ export default function QuoteScreen() {
 
           return isOwnMission(job) ? job.quotes ?? [] : undefined;
         },
+        locale,
       });
 
       if (onScreen.current !== wanted) return;
 
       if (result.kind === 'sent' || result.kind === 'recovered') {
         finished.current = true;
+        const amount = formatMillimes(amountTTC, undefined, locale);
+
         Alert.alert(
-          mode === 'update' ? (resent ? 'Devis renvoyé' : 'Devis modifié') : 'Devis envoyé',
+          mode === 'update' ? (resent ? t('app.quote.sent.resentTitle') : t('app.quote.sent.changedTitle')) : t('app.quote.sent.createdTitle'),
           result.kind === 'recovered'
-            ? `La réponse du serveur s’est perdue, mais le devis de ${formatMillimes(amountTTC)} TTC est bien parti.`
+            ? t('app.quote.sent.recovered', { amount })
             : mode === 'update'
               ? resent
-                ? `Le client a reçu votre devis modifié de ${formatMillimes(amountTTC)} TTC et peut maintenant l’accepter.`
-                : `Le client voit maintenant le devis de ${formatMillimes(amountTTC)} TTC.`
-              : `Le client a reçu votre devis de ${formatMillimes(amountTTC)} TTC.`,
-          [{ text: 'OK', onPress: leave }],
+                ? t('app.quote.sent.resent', { amount })
+                : t('app.quote.sent.changed', { amount })
+              : t('app.quote.sent.created', { amount }),
+          [{ text: t('common.actions.ok'), onPress: leave }],
         );
         return;
       }
@@ -354,18 +376,18 @@ export default function QuoteScreen() {
       if (result.kind === 'unknown') {
         // The mission shows the truth: the quote is there or it is not.
         finished.current = true;
-        Alert.alert('Pas de réponse du serveur', result.message, [{ text: 'Voir la mission', onPress: leave }]);
+        Alert.alert(t('app.quote.noAnswerTitle'), result.message, [{ text: t('app.quote.viewMission'), onPress: leave }]);
         return;
       }
 
       if (result.kind === 'changed-not-resent') {
         // The changes are saved: leaving is not leaving them behind, and tapping again sends the quote.
         initial.current = sentDraft;
-        Alert.alert('Devis non renvoyé', result.message);
+        Alert.alert(t('app.quote.notResentTitle'), result.message);
         return;
       }
 
-      Alert.alert('Erreur', result.message);
+      Alert.alert(t('common.states.error'), result.message);
     } finally {
       if (onScreen.current === wanted) {
         working.current = false;
@@ -388,23 +410,25 @@ export default function QuoteScreen() {
       <View style={styles.container}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.header}>
-          <TouchableOpacity onPress={leave} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Retour">
-            <Ionicons name="arrow-back" size={24} color="#D4AF37" />
+          <TouchableOpacity onPress={leave} style={styles.backButton} accessibilityRole="button" accessibilityLabel={t('common.actions.back')}>
+            <Ionicons name="arrow-back" size={24} color="#D4AF37" style={mirrorStyle(locale)} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Devis</Text>
+          <Text style={styles.headerTitle}>{t('app.quote.title')}</Text>
           <View style={{ width: 40 }} />
         </View>
         <View style={styles.blocked}>
           <Ionicons name="information-circle-outline" size={40} color="#94a3b8" />
-          <Text style={styles.blockedText}>{blocked ?? 'Ce devis n’est pas disponible.'}</Text>
+          <Text style={styles.blockedText}>{blocked ?? t('app.quote.unavailable')}</Text>
           <TouchableOpacity style={styles.secondary} onPress={leave}>
-            <Text style={styles.secondaryText}>Retour</Text>
+            <Text style={styles.secondaryText}>{t('common.actions.back')}</Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  // Spaced-out headings are for Latin letters: the letters of an Arabic word are joined.
+  const spaced = { letterSpacing: spacing(locale, 1) };
   const rates = taxRateChoices(draft.taxRate);
   const lastLine = draft.lines[draft.lines.length - 1];
   // Full when no line can be added: the twentieth is there and filled (an empty last line is the one that gets filled in).
@@ -416,10 +440,10 @@ export default function QuoteScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <View style={styles.header}>
-        <TouchableOpacity onPress={goBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel="Retour">
-          <Ionicons name="arrow-back" size={24} color="#D4AF37" />
+        <TouchableOpacity onPress={goBack} style={styles.backButton} accessibilityRole="button" accessibilityLabel={t('common.actions.back')}>
+          <Ionicons name="arrow-back" size={24} color="#D4AF37" style={mirrorStyle(locale)} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{editing ? 'Modifier le devis' : 'Nouveau devis'} · #{id}</Text>
+        <Text style={styles.headerTitle}>{editing ? t('app.quote.header.edit', { ref: `#${id}` }) : t('app.quote.header.create', { ref: `#${id}` })}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -428,44 +452,44 @@ export default function QuoteScreen() {
           <View style={styles.asked}>
             <Ionicons name="chatbubble-ellipses-outline" size={20} color="#f59e0b" />
             <View style={{ flex: 1, gap: 4 }}>
-              <Text style={styles.askedTitle}>Le client demande une modification</Text>
-              {editing.clientNote ? <Text style={styles.askedNote}>« {editing.clientNote} »</Text> : null}
-              <Text style={styles.askedNote}>Changez le devis puis renvoyez-le : le client ne peut pas l’accepter avant.</Text>
+              <Text style={styles.askedTitle}>{t('app.quote.changeRequested')}</Text>
+              {editing.clientNote ? <Text style={styles.askedNote}>{t('app.quote.clientNote', { note: isolateFor(locale, editing.clientNote) })}</Text> : null}
+              <Text style={styles.askedNote}>{t('app.quote.changeHint')}</Text>
             </View>
           </View>
         ) : null}
 
         {/* Title */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>TITRE</Text>
+          <Text style={[styles.cardTitle, spaced]}>{t('app.quote.titleLabel')}</Text>
           <TextInput
             style={[styles.input, first('title', null) ? styles.inputBad : null]}
             value={draft.title}
             onChangeText={(title) => change({ title })}
-            placeholder="Ex. : Réparation d’une fuite"
+            placeholder={t('app.quote.titlePlaceholder')}
             placeholderTextColor="#64748b"
             maxLength={QUOTE_LIMITS.title + 20}
             editable={!sending}
-            accessibilityLabel="Titre du devis"
+            accessibilityLabel={t('app.quote.titleAccessibility')}
           />
           {first('title', null) ? <Text style={styles.error}>{first('title', null)}</Text> : null}
         </View>
 
         {/* Lines */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>LIGNES</Text>
-          {!editing ? <Text style={styles.hint}>{prefillHint(mission)}</Text> : null}
+          <Text style={[styles.cardTitle, spaced]}>{t('app.quote.linesLabel')}</Text>
+          {!editing ? <Text style={styles.hint}>{prefillHint(mission, locale)}</Text> : null}
 
           {draft.lines.map((line, index) => (
             <View key={line.key} style={styles.line}>
               <View style={styles.lineHead}>
-                <Text style={styles.lineNumber}>Ligne {index + 1}</Text>
+                <Text style={styles.lineNumber}>{t('app.quote.lineNumber', { number: index + 1 })}</Text>
                 <View style={{ flex: 1 }} />
                 <TouchableOpacity
                   onPress={() => askToRemove(line, index)}
                   disabled={sending || draft.lines.length === 1}
                   accessibilityRole="button"
-                  accessibilityLabel={`Supprimer la ligne ${index + 1}`}
+                  accessibilityLabel={t('app.quote.removeLine', { number: index + 1 })}
                   hitSlop={8}
                   style={[styles.remove, draft.lines.length === 1 ? styles.removeOff : null]}
                 >
@@ -477,17 +501,17 @@ export default function QuoteScreen() {
                 style={[styles.input, first('label', index) ? styles.inputBad : null]}
                 value={line.label}
                 onChangeText={(label) => changeLine(line.key, { label })}
-                placeholder="Ce que couvre la ligne"
+                placeholder={t('app.quote.linePlaceholder')}
                 placeholderTextColor="#64748b"
                 maxLength={QUOTE_LIMITS.label + 20}
                 editable={!sending}
-                accessibilityLabel={`Ligne ${index + 1} : ce que couvre la ligne`}
+                accessibilityLabel={t('app.quote.lineAccessibility', { number: index + 1 })}
               />
               {first('label', index) ? <Text style={styles.error}>{first('label', index)}</Text> : null}
 
               <View style={styles.numbers}>
                 <View style={styles.numberBox}>
-                  <Text style={styles.fieldLabel}>Quantité</Text>
+                  <Text style={styles.fieldLabel}>{t('app.quote.quantity')}</Text>
                   <TextInput
                     style={[styles.input, first('quantity', index) ? styles.inputBad : null]}
                     value={line.quantity}
@@ -496,11 +520,11 @@ export default function QuoteScreen() {
                     placeholder="1"
                     placeholderTextColor="#64748b"
                     editable={!sending}
-                    accessibilityLabel={`Ligne ${index + 1} : quantité`}
+                    accessibilityLabel={t('app.quote.quantityAccessibility', { number: index + 1 })}
                   />
                 </View>
                 <View style={styles.numberBox}>
-                  <Text style={styles.fieldLabel}>Prix unitaire (DT)</Text>
+                  <Text style={styles.fieldLabel}>{t('app.quote.unitPrice')}</Text>
                   <TextInput
                     style={[styles.input, first('unitPrice', index) ? styles.inputBad : null]}
                     value={line.unitPrice}
@@ -509,7 +533,7 @@ export default function QuoteScreen() {
                     placeholder="0,000"
                     placeholderTextColor="#64748b"
                     editable={!sending}
-                    accessibilityLabel={`Ligne ${index + 1} : prix unitaire en dinars`}
+                    accessibilityLabel={t('app.quote.unitPriceAccessibility', { number: index + 1 })}
                   />
                 </View>
               </View>
@@ -518,7 +542,7 @@ export default function QuoteScreen() {
               {first('total', index) ? <Text style={styles.error}>{first('total', index)}</Text> : null}
 
               <Text style={styles.lineTotal}>
-                {preview.lines[index] !== null ? `Total de la ligne : ${formatMillimes(preview.lines[index] as number)}` : 'Total de la ligne : –'}
+                {t('app.quote.lineTotal', { total: preview.lines[index] !== null ? formatMillimes(preview.lines[index] as number, undefined, locale) : '–' })}
               </Text>
             </View>
           ))}
@@ -527,14 +551,14 @@ export default function QuoteScreen() {
 
           <TouchableOpacity style={[styles.secondary, (sending || full) && styles.disabled]} onPress={() => addLine()} disabled={sending || full}>
             <Ionicons name="add" size={18} color="#D4AF37" />
-            <Text style={styles.secondaryText}>Ajouter une ligne</Text>
+            <Text style={styles.secondaryText}>{t('app.quote.addLine')}</Text>
           </TouchableOpacity>
 
           {choices.length > 0 ? (
             <>
               <TouchableOpacity style={[styles.secondary, (sending || full) && styles.disabled]} onPress={() => setShowCatalog((open) => !open)} disabled={sending || full}>
                 <Ionicons name="list" size={18} color="#D4AF37" />
-                <Text style={styles.secondaryText}>{showCatalog ? 'Masquer le catalogue' : 'Ajouter depuis le catalogue'}</Text>
+                <Text style={styles.secondaryText}>{showCatalog ? t('app.quote.hideCatalog') : t('app.quote.fromCatalog')}</Text>
               </TouchableOpacity>
 
               {showCatalog
@@ -554,54 +578,54 @@ export default function QuoteScreen() {
 
         {/* Tax and validity */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>TVA</Text>
+          <Text style={[styles.cardTitle, spaced]}>{t('app.quote.taxLabel')}</Text>
           <View style={styles.chips}>
             {rates.map((rate) => (
               <TouchableOpacity key={rate} style={[styles.chip, draft.taxRate === rate && styles.chipOn]} onPress={() => change({ taxRate: rate })} disabled={sending} accessibilityRole="radio" accessibilityState={{ selected: draft.taxRate === rate }}>
-                <Text style={[styles.chipText, draft.taxRate === rate && styles.chipTextOn]}>{String(rate).replace('.', ',')} %</Text>
+                <Text style={[styles.chipText, draft.taxRate === rate && styles.chipTextOn]}>{t('app.quote.taxChip', { rate: String(rate).replace('.', ',') })}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={[styles.cardTitle, { marginTop: 8 }]}>VALIDITÉ</Text>
+          <Text style={[styles.cardTitle, spaced, { marginTop: 8 }]}>{t('app.quote.validityLabel')}</Text>
           <View style={styles.chips}>
             {editing ? (
               <TouchableOpacity style={[styles.chip, draft.validDays === null && styles.chipOn]} onPress={() => change({ validDays: null })} disabled={sending} accessibilityRole="radio" accessibilityState={{ selected: draft.validDays === null }}>
-                <Text style={[styles.chipText, draft.validDays === null && styles.chipTextOn]}>Inchangée</Text>
+                <Text style={[styles.chipText, draft.validDays === null && styles.chipTextOn]}>{t('app.quote.unchanged')}</Text>
               </TouchableOpacity>
             ) : null}
             {VALIDITY_CHOICES.map((count) => (
               <TouchableOpacity key={count} style={[styles.chip, draft.validDays === count && styles.chipOn]} onPress={() => change({ validDays: count })} disabled={sending} accessibilityRole="radio" accessibilityState={{ selected: draft.validDays === count }}>
-                <Text style={[styles.chipText, draft.validDays === count && styles.chipTextOn]}>{days(count)}</Text>
+                <Text style={[styles.chipText, draft.validDays === count && styles.chipTextOn]}>{days(count, t)}</Text>
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={styles.hint}>Après ce délai, le client ne peut plus accepter le devis.</Text>
+          <Text style={styles.hint}>{t('app.quote.validityHint')}</Text>
         </View>
 
         {/* Note */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>NOTE POUR LE CLIENT (FACULTATIF)</Text>
+          <Text style={[styles.cardTitle, spaced]}>{t('app.quote.noteLabel')}</Text>
           <TextInput
             style={[styles.input, styles.multiline, first('description', null) ? styles.inputBad : null]}
             value={draft.description}
             onChangeText={(description) => change({ description })}
-            placeholder="Matériel fourni, conditions, délais…"
+            placeholder={t('app.quote.notePlaceholder')}
             placeholderTextColor="#64748b"
             multiline
             maxLength={QUOTE_LIMITS.description + 50}
             editable={!sending}
-            accessibilityLabel="Note pour le client"
+            accessibilityLabel={t('app.quote.noteAccessibility')}
           />
           {first('description', null) ? <Text style={styles.error}>{first('description', null)}</Text> : null}
         </View>
 
         {/* Totals */}
         <View style={styles.totals}>
-          <TotalRow label="Total HT" value={formatMillimes(preview.amountHT)} />
-          <TotalRow label={`TVA (${String(draft.taxRate).replace('.', ',')} %)`} value={formatMillimes(preview.taxAmount)} />
-          <TotalRow label="Total TTC" value={formatMillimes(preview.amountTTC)} strong />
-          {!preview.complete ? <Text style={styles.hint}>Le total sera complet quand toutes les lignes seront remplies.</Text> : null}
+          <TotalRow label={t('app.quote.totalHT')} value={formatMillimes(preview.amountHT, undefined, locale)} />
+          <TotalRow label={t('app.quote.taxRow', { rate: String(draft.taxRate).replace('.', ',') })} value={formatMillimes(preview.taxAmount, undefined, locale)} />
+          <TotalRow label={t('app.quote.totalTTC')} value={formatMillimes(preview.amountTTC, undefined, locale)} strong />
+          {!preview.complete ? <Text style={styles.hint}>{t('app.quote.incompleteTotal')}</Text> : null}
         </View>
 
         {first('quote', null) ? <Text style={styles.error}>{first('quote', null)}</Text> : null}
@@ -613,8 +637,8 @@ export default function QuoteScreen() {
             <ActivityIndicator color="#0f172a" />
           ) : (
             <>
-              <Text style={styles.primaryText}>{editing ? (editing.status === 'MODIFICATION_REQUESTED' ? 'Renvoyer au client' : 'Enregistrer les modifications') : 'Envoyer le devis au client'}</Text>
-              <Ionicons name="send" size={18} color="#0f172a" style={{ marginLeft: 8 }} />
+              <Text style={styles.primaryText}>{editing ? (editing.status === 'MODIFICATION_REQUESTED' ? t('app.quote.submitResend') : t('app.quote.submitSave')) : t('app.quote.submitSend')}</Text>
+              <Ionicons name="send" size={18} color="#0f172a" style={[{ marginStart: 8 }, mirrorStyle(locale)]} />
             </>
           )}
         </TouchableOpacity>
@@ -656,7 +680,7 @@ const styles = StyleSheet.create({
   blockedText: { color: '#cbd5e1', fontSize: 16, lineHeight: 24, textAlign: 'center' },
 
   card: { backgroundColor: '#1e293b', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#334155', gap: 10 },
-  cardTitle: { fontSize: 12, color: '#D4AF37', fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
+  cardTitle: { fontSize: 12, color: '#D4AF37', fontWeight: '800', textTransform: 'uppercase' },
   hint: { color: '#94a3b8', fontSize: 13, lineHeight: 18 },
   error: { color: '#f87171', fontSize: 13, lineHeight: 18 },
 
@@ -685,7 +709,8 @@ const styles = StyleSheet.create({
   numbers: { flexDirection: 'row', gap: 12 },
   numberBox: { flex: 1, gap: 6 },
   fieldLabel: { color: '#94a3b8', fontSize: 12 },
-  lineTotal: { color: '#cbd5e1', fontSize: 14, fontWeight: '600', textAlign: 'right' },
+  // The total of a line sits at the end of the line: the right in French, the left in Arabic.
+  lineTotal: { color: '#cbd5e1', fontSize: 14, fontWeight: '600', alignSelf: 'flex-end' },
 
   secondary: {
     flexDirection: 'row',
@@ -724,7 +749,8 @@ const styles = StyleSheet.create({
   totals: { backgroundColor: '#1e293b', borderRadius: 20, padding: 20, borderWidth: 1, borderColor: '#D4AF37', gap: 8 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   totalLabel: { color: '#94a3b8', fontSize: 15 },
-  totalValue: { color: '#e2e8f0', fontSize: 15, fontWeight: '600' },
+  // An amount is read left to right, in French and in Arabic.
+  totalValue: { color: '#e2e8f0', fontSize: 15, fontWeight: '600', writingDirection: 'ltr' },
   totalStrong: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
 
   primary: {

@@ -4,8 +4,9 @@ import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-import { isExpoPushToken, routes } from '../lib/shared';
+import { isExpoPushToken, message, routes } from '../lib/shared';
 import { call } from './call';
+import { currentLocale } from './i18n-core';
 
 /**
  * Push notifications (P1-15): a new assignment reaches the artisan's phone even when the app is closed.
@@ -38,6 +39,26 @@ function projectId(): string | undefined {
 }
 
 /**
+ * The notification channel of the app on Android, named in the language of the app now (the name the phone's settings show). Made at the
+ * registration and again when the technician changes the language, so that the settings do not keep the old name. It does not ask for
+ * the permission. Nothing is done on another system, on a simulator, or when the phone refuses.
+ */
+export async function nameChannel(): Promise<void> {
+  try {
+    if (!Device.isDevice || Platform.OS !== 'android') return;
+
+    await Notifications.setNotificationChannelAsync(CHANNEL, {
+      name: message(currentLocale(), 'app.push.channelName'),
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#D4AF37',
+    });
+  } catch {
+    // The channel keeps its name: nothing else depends on it.
+  }
+}
+
+/**
  * Asks for the permission, gets the token of this phone and gives it to the server, for the signed-in artisan.
  * Gives back the token, or null when this phone cannot have push (a simulator, a refusal, no project id).
  */
@@ -45,14 +66,7 @@ export async function registerForPush(): Promise<string | null> {
   try {
     if (!Device.isDevice) return null;
 
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync(CHANNEL, {
-        name: 'Missions',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#D4AF37',
-      });
-    }
+    await nameChannel();
 
     let permission = await Notifications.getPermissionsAsync();
 

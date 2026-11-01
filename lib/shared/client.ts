@@ -1,4 +1,5 @@
 import type { OffsetPaginated, Paginated } from './generated/envelope';
+import type { Locale } from './generated/i18n';
 import type { DispatchSort, DispatchViewId } from './generated/intervention-status';
 import type { ArtisanAvailabilityAnswer, ArtisanSelf, MissionRefusalAnswer } from './artisan';
 import type { MissionRejectionReason } from './generated/enums';
@@ -404,6 +405,8 @@ export const routes = {
     team: <Row>(role: string) => route<{ data: Row[] }>('get', '/users', { params: { role, limit: 100 } }),
     /** A page of artisans: `Paginated`, paged by page and limit. `Row` is the screen's own row type. */
     artisans: <Row>(query: ArtisanListQuery = {}) => route<Paginated<Row>>('get', '/users/artisans', { params: { ...query } }),
+    /** Sets the language of the signed-in account (P3-04): the notifications and messages sent to this person follow it. Any signed-in role. */
+    setLocale: (locale: Locale) => route<{ locale: Locale }>('patch', '/users/me/locale', { body: { locale } }),
   },
   proofs: {
     /** A page of proofs: `Paginated`, paged by take and skip. `Row` is the admin's proof record. */

@@ -1,4 +1,5 @@
-import { coordinatesOf, type ArtisanSelf } from '../lib/shared';
+import { coordinatesOf, message, tradeLabel, tradesNamedBy, type ArtisanSelf, type Locale } from '../lib/shared';
+import { formatDate, joinList } from './i18n-core';
 
 /** The letters in the round avatar: the first letter of the first two words of the name ("Ahmed Ben Salah" → "AB"). */
 export function initialsOf(name: string | null | undefined): string {
@@ -26,53 +27,64 @@ export function ratingText(average: number | null | undefined, count: number | n
   return average.toFixed(1);
 }
 
-/** "Octobre 2026", for "member since". Null when the date is missing or not a date. */
-export function memberSince(iso: string | null | undefined): string | null {
+/** "Octobre 2026" / "أكتوبر 2026", for "member since". Null when the date is missing or not a date. */
+export function memberSince(iso: string | null | undefined, locale: Locale): string | null {
   if (!iso) return null;
 
   const date = new Date(iso);
 
   if (Number.isNaN(date.getTime())) return null;
 
-  const text = date.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const text = formatDate(date, locale, { month: 'long', year: 'numeric' });
 
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
+/** A specialty is stored as the name of a trade ("Plombier"): in Arabic it is shown with the Arabic name of that trade. */
+function specialtyText(text: string, locale: Locale): string {
+  if (locale === 'fr') return text;
+
+  const named = tradesNamedBy(text);
+
+  return named.length === 1 ? tradeLabel(named[0], locale) : text;
+}
+
 /** What the artisan does: their trades, or their main one, or the generic title. */
-export function tradesText(self: Pick<ArtisanSelf, 'specialties' | 'specialty'> | null | undefined): string {
+export function tradesText(self: Pick<ArtisanSelf, 'specialties' | 'specialty'> | null | undefined, locale: Locale): string {
   const list = (self?.specialties ?? []).map((trade) => trade.trim()).filter(Boolean);
 
-  if (list.length) return list.join(', ');
+  if (list.length) return joinList(list.map((trade) => specialtyText(trade, locale)), locale);
 
-  return self?.specialty?.trim() || 'Technicien';
+  const main = self?.specialty?.trim();
+
+  return main ? specialtyText(main, locale) : message(locale, 'app.common.technician');
 }
 
 /** What to tell an artisan whose profile is not approved yet (they cannot take missions), or null when it is. */
-export function verificationNotice(status: string | null | undefined): string | null {
+export function verificationNotice(status: string | null | undefined, locale: Locale): string | null {
   switch (status) {
     case 'APPROVED':
       return null;
     case 'PENDING_REVIEW':
-      return 'Votre profil est en cours de vérification par l’équipe.';
+      return message(locale, 'app.profile.notice.pendingReview');
     case 'REJECTED':
-      return 'Votre profil a été refusé. Contactez le support.';
+      return message(locale, 'app.profile.notice.rejected');
     case 'SUSPENDED':
-      return 'Votre profil est suspendu. Contactez le support.';
+      return message(locale, 'app.profile.notice.suspended');
     case 'DRAFT':
-      return 'Votre profil n’est pas encore complet.';
+      return message(locale, 'app.profile.notice.draft');
     default:
       return null;
   }
 }
 
 /** "Lun. 19 oct." */
-export function shortDate(iso: string | null | undefined): string {
+export function shortDate(iso: string | null | undefined, locale: Locale): string {
   if (!iso) return '';
 
   const date = new Date(iso);
 
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+  return Number.isNaN(date.getTime()) ? '' : formatDate(date, locale, { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 /** The year of a moment in the time of Tunis, or on the clock of the phone when it has no time-zone data. */
@@ -88,7 +100,7 @@ function yearInTunis(date: Date): number {
  * "24 oct., 14:02", in the time of Tunis (the time a customer and an artisan of Tunisia read on their clocks). A moment of another
  * year than `now`'s carries its year ("24 oct. 2025, 14:02"): a line of a ledger can be older than a year.
  */
-export function shortDateTime(iso: string | null | undefined, now: Date = new Date()): string {
+export function shortDateTime(iso: string | null | undefined, locale: Locale, now: Date = new Date()): string {
   if (!iso) return '';
 
   const date = new Date(iso);
@@ -99,21 +111,17 @@ export function shortDateTime(iso: string | null | undefined, now: Date = new Da
 
   if (yearInTunis(date) !== yearInTunis(now)) options.year = 'numeric';
 
-  try {
-    return date.toLocaleString('fr-FR', { timeZone: 'Africa/Tunis', ...options });
-  } catch {
-    // A phone without time-zone data still shows the moment, on its own clock.
-    return date.toLocaleString('fr-FR', options);
-  }
+  // A phone without time-zone data still shows the moment, on its own clock (formatDate falls back by itself).
+  return formatDate(date, locale, options);
 }
 
 /** "09:05" */
-export function clockTime(iso: string | null | undefined): string {
+export function clockTime(iso: string | null | undefined, locale: Locale): string {
   if (!iso) return '';
 
   const date = new Date(iso);
 
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(date.getTime()) ? '' : formatDate(date, locale, { hour: '2-digit', minute: '2-digit' });
 }
 
 /** A point as text, for the place the artisan was last put on the map: "36.80650, 10.18150". */
